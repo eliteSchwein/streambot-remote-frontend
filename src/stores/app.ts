@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { backendUrl, backendWsUrl } from '@/utils/backend'
-import { applyPreferredLocale, t } from '@/i18n'
+import { applyPreferredLocale } from '@/i18n'
 
 export type RemoteInstance = Record<string, any> & { id: string | number }
 export type DashboardSectionName =
@@ -160,6 +160,17 @@ function messagePayload(message: any) {
   return message?.params ?? message?.data ?? message?.payload ?? message ?? {}
 }
 
+function isAuthenticationError(message: any) {
+  const type = eventType(message)
+  if (type !== 'notify_error') return false
+  const payload = messagePayload(message)
+  const text = String(payload?.message ?? payload?.error ?? message?.message ?? '').toLowerCase()
+  return [
+    'not logged in', 'not authenticated', 'unauthenticated', 'unauthorized',
+    'authentication required', 'login required', 'invalid session', 'session expired',
+  ].some(value => text.includes(value))
+}
+
 function messageInstanceId(message: any) {
   const payload = messagePayload(message)
   return firstNonEmptyString(
@@ -218,26 +229,41 @@ export const useAppStore = defineStore('app', {
   },
   actions: {
     async bootstrap() {
+      if (this.bootstrapped) return
       this.loading = true
       this.error = null
       applyPreferredLocale()
       try {
-        // The current cloud backend is notify-first: /ws/user pushes the initial
-        // user/settings/instances/dashboard state immediately after authentication.
-        // Register the waiter before opening the socket so the first notify cannot race us.
-        const userResponse = waitForSocketMessage(message => eventType(message) === 'notify_user_update')
+        // The notify-first backend pushes notify_user_update immediately for a valid
+        // session. An unauthenticated socket closes/rejects instead. Treat that as a
+        // normal logged-out state instead of waiting for the generic 10s request timeout.
+        const authResponse = waitForSocketMessage(message => {
+          const type = eventType(message)
+          return type === 'notify_user_update' || type === '__socket_closed__' || isAuthenticationError(message)
+        }, 4_000)
         this.connectUserSocket()
-        const userMessage = await userResponse
-        const userPayload = messagePayload(userMessage)
+        const authMessage = await authResponse
+
+        if (eventType(authMessage) !== 'notify_user_update') {
+          this.me = null
+          this.instances = []
+          this.dashboards = {}
+          this.disconnectUserSocket()
+          applyPreferredLocale()
+          return
+        }
+
+        const userPayload = messagePayload(authMessage)
         this.me = userPayload?.user ?? userPayload?.me ?? userPayload?.data ?? userPayload
         applyPreferredLocale(this.me)
-      } catch (error: any) {
+      } catch {
+        // Bootstrap failures before authentication are intentionally quiet. The router
+        // will show /login; transient realtime errors are surfaced only after login.
         this.me = null
         this.instances = []
         this.dashboards = {}
         this.disconnectUserSocket()
         applyPreferredLocale()
-        this.error = error?.message ?? t('errors.backend')
       } finally {
         this.bootstrapped = true
         this.loading = false
@@ -495,16 +521,28 @@ export const useAppStore = defineStore('app', {
           }
 
           if (type === 'notify_error') {
+            // Authentication failures are expected while logged out/expired and should
+            // redirect to login without a scary realtime error snackbar.
+            if (!this.authenticated && isAuthenticationError(message)) return
             this.error = String(payload?.message ?? payload?.error ?? message?.message ?? 'WebSocket error')
             return
           }
         } catch { /* ignore unknown frames */ }
       }
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         if (userSocket !== socket) return
         userSocket = null
         this.userSocketConnected = false
+        settleWaiters({ type: '__socket_closed__', code: event.code, reason: event.reason })
         if (socketStopped) return
+
+        // If the very first user socket dies before authentication, this is normally
+        // simply a missing/expired login session. Do not reconnect-loop in the background.
+        if (!this.me && !this.bootstrapped) {
+          socketStopped = true
+          return
+        }
+
         reconnectAttempts += 1
         const delay = Math.min(30_000, 1000 * 2 ** Math.min(reconnectAttempts - 1, 5))
         reconnectTimer = setTimeout(() => this.connectUserSocket(), delay)
