@@ -1,0 +1,28 @@
+{
+  "name": "streamding-remote-admin-frontend",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@mdi/font": "7.4.47",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.42",
+    "vue-router": "^5.3.1",
+    "vuetify": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "sass": "1.104.1",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.0",
+    "vite-plugin-vuetify": "^2.1.3",
+    "vue-tsc": "^3.3.11"
+  }
+}
