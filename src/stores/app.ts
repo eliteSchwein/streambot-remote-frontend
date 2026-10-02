@@ -340,6 +340,22 @@ export const useAppStore = defineStore('app', {
       return this.streamdingCommand(id, action, payload, section)
     },
 
+    async streamdingMethod(id: string | number, method: string, params: any = {}, section?: DashboardSectionName) {
+      await this.waitForUserSocket()
+      const payload = params ?? {}
+      socketSend({
+        type: 'dashboard_action',
+        instance_id: String(id),
+        section: section ?? null,
+        // The cloud dashboard_action envelope always requires `action`/`payload`.
+        // Supplying method/params as well selects the native StreamDing WS passthrough.
+        action: method,
+        payload,
+        method,
+        params: payload,
+      })
+    },
+
     connectUserSocket() {
       if (userSocket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(userSocket.readyState)) return
       socketStopped = false

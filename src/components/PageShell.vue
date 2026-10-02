@@ -1,6 +1,6 @@
 <template>
-  <div class="page-shell" :class="{ 'page-shell--wide': wide }">
-    <div class="d-flex flex-wrap align-start ga-3 mb-7">
+  <div class="page-shell" :class="{ 'page-shell--wide': wide, 'page-shell--compact-header': compactHeader }">
+    <div class="page-shell__header d-flex flex-wrap ga-3" :class="compactHeader ? 'align-center mb-4' : 'align-start mb-7'">
       <div>
         <div class="d-flex flex-wrap align-center ga-3">
           <h1 class="text-h4 font-weight-bold">{{ title }}</h1>
@@ -18,5 +18,5 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{ title: string; subtitle?: string; wide?: boolean }>()
+defineProps<{ title: string; subtitle?: string; wide?: boolean; compactHeader?: boolean }>()
 </script>

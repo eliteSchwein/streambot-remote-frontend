@@ -1,5 +1,5 @@
 <template>
-  <PageShell :title="instanceName" wide>
+  <PageShell :title="instanceName" wide compact-header>
     <template #title-after>
       <v-chip
         size="small"
@@ -153,12 +153,85 @@
               </template>
 
               <template v-else-if="section.key === 'interactions'">
-                <v-list v-if="interactionItems.length" bg-color="transparent">
-                  <v-list-item v-for="item in interactionItems" :key="itemKey(item)" :title="itemLabel(item)" :subtitle="String(item.eta ?? item.status ?? '')">
-                    <template #append><v-btn icon="mdi-delete-outline" variant="text" color="error" @click="command('interaction.remove',{uuid:item.uuid ?? item.id},'interactions')" /></template>
-                  </v-list-item>
-                </v-list>
-                <div v-else class="empty-state">{{ t('instance.emptySection') }}</div>
+                <div v-if="interactionItems.length" class="interaction-list">
+                  <div
+                    v-for="item in interactionItems"
+                    :key="itemKey(item)"
+                    class="interaction-item"
+                    :class="`interaction-item--${interactionState(item)}`"
+                  >
+                    <div class="interaction-item__icon">
+                      <v-icon :icon="interactionSourceIcon(item)" size="22" />
+                    </div>
+
+                    <div class="interaction-item__body">
+                      <div class="interaction-item__headline">
+                        <span class="font-weight-bold">{{ interactionDisplayName(item) }}</span>
+                        <v-chip
+                          v-if="interactionState(item) !== 'active'"
+                          size="x-small"
+                          variant="tonal"
+                          :color="interactionStateColor(item)"
+                          :prepend-icon="interactionStateIcon(item)"
+                        >
+                          {{ interactionStateLabel(item) }}
+                        </v-chip>
+                      </div>
+
+                      <div class="interaction-item__meta">
+                        <span>
+                          <v-icon :icon="interactionSourceIcon(item)" size="16" />
+                          {{ interactionSourceLabel(item) }}
+                        </span>
+                        <span v-if="Number(item.duration ?? 0) > 0">
+                          <v-icon icon="mdi-timer-outline" size="16" />
+                          {{ t('instance.interactionDuration',{duration:formatSeconds(item.duration)}) }}
+                        </span>
+                        <span v-if="Number(item.eta_seconds ?? 0) > 0">
+                          <v-icon icon="mdi-clock-fast" size="16" />
+                          {{ t('instance.interactionEta',{duration:formatSeconds(item.eta_seconds)}) }}
+                        </span>
+                        <span v-else-if="interactionState(item) === 'active'">
+                          <v-icon icon="mdi-progress-clock" size="16" />
+                          {{ t('instance.interactionPleaseWait') }}
+                        </span>
+                        <span v-if="Number(item.alert_count ?? 0) > 0">
+                          <v-icon icon="mdi-bell-outline" size="16" />
+                          {{ t('instance.interactionAlerts',{count:Number(item.alert_count)}) }}
+                        </span>
+                      </div>
+
+                      <v-progress-linear
+                        v-if="interactionState(item) === 'active' && Number(item.duration ?? 0) > 0"
+                        class="interaction-item__progress"
+                        :model-value="interactionProgress(item)"
+                        color="white"
+                        bg-color="rgba(255,255,255,.22)"
+                        rounded
+                        height="4"
+                      />
+
+                      <div v-if="item.error" class="interaction-item__error">
+                        <v-icon icon="mdi-alert-circle-outline" size="16" />
+                        {{ item.error }}
+                      </div>
+                    </div>
+
+                    <v-btn
+                      class="interaction-item__remove"
+                      icon="mdi-close"
+                      :variant="interactionState(item) === 'active' ? 'tonal' : 'text'"
+                      :color="interactionState(item) === 'active' ? 'white' : 'error'"
+                      size="small"
+                      :title="t('instance.interactionCancel')"
+                      @click.stop="command('interaction.remove',{uuid:item.uuid ?? item.id},'interactions')"
+                    />
+                  </div>
+                </div>
+                <div v-else class="interaction-empty">
+                  <v-icon icon="mdi-check-circle-outline" size="22" />
+                  <span>{{ t('instance.noInteractions') }}</span>
+                </div>
               </template>
 
               <template v-else-if="section.key === 'auto_macros'">
@@ -183,8 +256,19 @@
               </template>
 
               <template v-else-if="section.key === 'macros'">
-                <div v-if="filteredMacroItems(section).length" class="action-grid">
-                  <v-btn v-for="item in filteredMacroItems(section)" :key="itemKey(item)" variant="tonal" prepend-icon="mdi-play" @click="command('macro.run',{macro:item.name ?? item.id},'macros')">{{ itemLabel(item) }}</v-btn>
+                <div v-if="filteredMacroItems(section).length" class="macro-grid">
+                  <button
+                    v-for="item in filteredMacroItems(section)"
+                    :key="itemKey(item)"
+                    type="button"
+                    class="macro-tile"
+                    :title="itemLabel(item)"
+                    @click="command('macro.run',{macro:item.name ?? item.id},'macros')"
+                  >
+                    <span class="macro-tile__icon"><v-icon size="18">mdi-play</v-icon></span>
+                    <span class="macro-tile__label">{{ itemLabel(item) }}</span>
+                    <v-icon class="macro-tile__launch" size="16">mdi-chevron-right</v-icon>
+                  </button>
                 </div>
                 <div v-else class="empty-state">{{ editLayout ? t('instance.chooseMacros') : t('instance.emptySection') }}</div>
               </template>
@@ -220,7 +304,7 @@
               </template>
 
               <template v-else-if="section.key === 'audio'">
-                <RemoteAudioControl :audio="sectionData('audio') ?? {}" @command="(method,params)=>command(method,params,'audio')" />
+                <RemoteAudioControl :audio="sectionData('audio') ?? {}" @command="(method,params)=>command(method,params,'audio')" @method="(method,params)=>nativeMethod(method,params,'audio')" />
               </template>
 
               <template v-else-if="section.key === 'obs'">
@@ -381,7 +465,11 @@ const music = computed<any>(() => sectionData('music') ?? {})
 const giveaway = computed<any>(() => sectionData('giveaway') ?? {})
 const interactionItems = computed(() => toArray(sectionData('interactions')))
 const autoMacroItems = computed(() => toArray(sectionData('auto_macros')))
-const macroItems = computed(() => objectValues(sectionData('macros')))
+const hiddenMacroPrefixes = ['channel_point_', 'command_', 'event_'] as const
+const macroItems = computed(() => objectValues(sectionData('macros')).filter(item => {
+  const name = itemLabel(item).trim().toLowerCase()
+  return !hiddenMacroPrefixes.some(prefix => name.startsWith(prefix))
+}))
 const macroOptions = computed(() => macroItems.value.map(item => itemLabel(item)).sort((a,b)=>a.localeCompare(b)))
 const filteredMacroOptions = computed(() => { const q=macroSearch.value.trim().toLowerCase(); return q ? macroOptions.value.filter(name => name.toLowerCase().includes(q)) : macroOptions.value })
 const channelPointItems = computed(() => {
@@ -421,6 +509,56 @@ function itemLabel(item:any){ return String(item?.label ?? item?.name ?? item?.t
 function formatDuration(value:any){ const ms=Number(value); if(!Number.isFinite(ms) || ms < 0) return '0:00'; const total=Math.floor(ms/1000); return `${Math.floor(total/60)}:${String(total%60).padStart(2,'0')}` }
 function formatSeconds(value:any){ const total=Math.max(0,Math.round(Number(value)||0)); const h=Math.floor(total/3600); const m=Math.floor((total%3600)/60); const sec=total%60; if(h) return `${h}h ${m}m`; if(m) return `${m}m ${sec}s`; return `${sec}s` }
 function autoMacroProgress(item:any){ const interval=Number(item?.interval ?? 0); const current=Number(item?.current_interval ?? 0); return interval>0 ? Math.max(0,Math.min(100,(100/interval)*current)) : 0 }
+
+function interactionState(item:any): string {
+  return String(item?.state ?? item?.status ?? 'queued').toLowerCase()
+}
+function interactionSource(item:any): string {
+  return String(item?.source ?? item?.type ?? 'other').toLowerCase()
+}
+function interactionDisplayName(item:any): string {
+  const name = itemLabel(item).trim()
+  const source = interactionSource(item)
+  const prefixes:Record<string,string> = {
+    channel_point: String(t('instance.interactionChannelPoint')),
+    command: String(t('instance.interactionCommand')),
+    event: String(t('instance.interactionEvent')),
+  }
+  const prefix = prefixes[source]
+  if (!prefix) return name
+  const normalized = name.toLowerCase()
+  if (normalized.startsWith(`${prefix.toLowerCase()}:`)) return name
+  return `${prefix}: ${name}`
+}
+function interactionSourceIcon(item:any): string {
+  const icons:Record<string,string> = { command:'mdi-console-line', event:'mdi-lightning-bolt', channel_point:'mdi-star-circle', api:'mdi-api', other:'mdi-play-circle-outline' }
+  return icons[interactionSource(item)] ?? icons.other
+}
+function interactionStateIcon(item:any): string {
+  const icons:Record<string,string> = { queued:'mdi-clock-outline', active:'mdi-play-circle', finished:'mdi-check-circle', cancelled:'mdi-cancel', failed:'mdi-alert-circle' }
+  return icons[interactionState(item)] ?? 'mdi-help-circle-outline'
+}
+function interactionStateColor(item:any): string {
+  const state=interactionState(item)
+  if (state === 'active' || state === 'finished') return 'success'
+  if (state === 'failed') return 'error'
+  if (state === 'cancelled') return 'warning'
+  return 'grey'
+}
+function interactionStateLabel(item:any): string {
+  const labels:Record<string,string> = { queued:t('instance.interactionQueued'), active:t('instance.interactionActive'), finished:t('instance.interactionFinished'), cancelled:t('instance.interactionCancelled'), failed:t('instance.interactionFailed') }
+  return labels[interactionState(item)] ?? interactionState(item)
+}
+function interactionSourceLabel(item:any): string {
+  const labels:Record<string,string> = { command:t('instance.interactionCommand'), event:t('instance.interactionEvent'), channel_point:t('instance.interactionChannelPoint'), api:'API', other:t('instance.interactionOther') }
+  return labels[interactionSource(item)] ?? labels.other
+}
+function interactionProgress(item:any): number {
+  const duration=Number(item?.duration ?? 0)
+  const eta=Number(item?.eta_seconds ?? 0)
+  if (interactionState(item) !== 'active' || duration <= 0) return 0
+  return Math.max(0,Math.min(100,((duration-eta)/duration)*100))
+}
 
 function normalizeDashboardLayout(items: any): Array<{ key: DashboardSectionName; icon: string; visible: boolean; column: number; config?: any }> {
   const raw = Array.isArray(items) ? items : []
@@ -491,7 +629,9 @@ function applyMacroSelection(){
 }
 function macroSelection(section:any): string[]{
   const selected = layoutItem(section)?.config?.macros
-  return Array.isArray(selected) ? selected : macroOptions.value
+  if (!Array.isArray(selected)) return macroOptions.value
+  const available = new Set(macroOptions.value)
+  return selected.map(String).filter(name => available.has(name))
 }
 function setMacroSelection(section:any, values:any){
   const item:any = layoutItem(section); if(!item) return
@@ -584,6 +724,7 @@ watch(id, () => loadDashboardLayout())
 watch(() => store.userSettings?.dashboard_layouts?.[id.value], () => loadDashboardLayout(), { deep: true })
 
 async function command(method:string, params:any={}, section?:DashboardSectionName){ try{ await store.streamdingCommand(id.value,method,params,section) } catch(e:any){ store.error=e?.message ?? t('instance.actionError') } }
+async function nativeMethod(method:string, params:any={}, section?:DashboardSectionName){ try{ await store.streamdingMethod(id.value,method,params,section) } catch(e:any){ store.error=e?.message ?? t('instance.actionError') } }
 onMounted(() => {
   loadDashboardLayout()
   const updateColumns = () => {
@@ -602,10 +743,44 @@ onBeforeUnmount(() => { if (layoutSaveTimer) clearTimeout(layoutSaveTimer); boar
 
 <style scoped>
 .action-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.macro-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+.macro-tile{appearance:none;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.055);color:inherit;border-radius:10px;min-width:0;min-height:46px;padding:7px 10px 7px 8px;display:grid;grid-template-columns:30px minmax(0,1fr) 18px;align-items:center;gap:8px;text-align:left;cursor:pointer;transition:background .14s ease,border-color .14s ease,transform .08s ease}
+.macro-tile:hover{background:rgba(var(--v-theme-primary),.10);border-color:rgba(var(--v-theme-primary),.28)}
+.macro-tile:active{transform:translateY(1px)}
+.macro-tile:focus-visible{outline:2px solid rgb(var(--v-theme-primary));outline-offset:2px}
+.macro-tile__icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(var(--v-theme-primary),.12);color:rgb(var(--v-theme-primary))}
+.macro-tile__label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.88rem;font-weight:500}
+.macro-tile__launch{opacity:.38;transition:opacity .14s ease,transform .14s ease}
+.macro-tile:hover .macro-tile__launch{opacity:.85;transform:translateX(2px)}
+@media (min-width:1500px){.macro-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}}
 .channel-point-grid,.audio-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
 .state-view{margin:0;padding:14px;border-radius:10px;background:rgba(255,255,255,.035);overflow:auto;max-height:430px;font-size:.8rem;line-height:1.45}
 .preview{background:#090909}
 .empty-state{padding:28px;text-align:center;opacity:.65}
+
+
+.interaction-list{display:flex;flex-direction:column;gap:9px}
+.interaction-item{display:flex;align-items:center;gap:14px;min-height:76px;padding:14px 14px 14px 16px;border-radius:8px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.075);color:rgba(255,255,255,.94);overflow:hidden;position:relative;transition:background .15s ease,border-color .15s ease}
+.interaction-item--queued{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.09)}
+.interaction-item--active{background:rgb(46,125,50);border-color:rgba(255,255,255,.08);color:#fff}
+.interaction-item--finished{background:rgba(46,125,50,.10);border-color:rgba(76,175,80,.25)}
+.interaction-item--failed{background:rgba(var(--v-theme-error),.08);border-color:rgba(var(--v-theme-error),.28)}
+.interaction-item--cancelled{background:rgba(var(--v-theme-warning),.07);border-color:rgba(var(--v-theme-warning),.24)}
+.interaction-item__icon{display:flex;align-items:center;justify-content:center;width:40px;height:40px;flex:0 0 40px;border-radius:50%;background:rgba(255,255,255,.075);color:rgba(255,255,255,.88)}
+.interaction-item--active .interaction-item__icon{background:rgba(0,0,0,.18);color:#fff}
+.interaction-item--failed .interaction-item__icon{color:rgb(var(--v-theme-error));background:rgba(var(--v-theme-error),.10)}
+.interaction-item--cancelled .interaction-item__icon{color:rgb(var(--v-theme-warning));background:rgba(var(--v-theme-warning),.10)}
+.interaction-item__body{min-width:0;flex:1}
+.interaction-item__headline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;line-height:1.25}
+.interaction-item__meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 14px;margin-top:5px;font-size:.82rem;color:rgba(255,255,255,.58)}
+.interaction-item--active .interaction-item__meta{color:rgba(255,255,255,.82)}
+.interaction-item__meta>span{display:inline-flex;align-items:center;gap:4px}
+.interaction-item__progress{margin-top:9px}
+.interaction-item__error{display:flex;align-items:center;gap:5px;margin-top:7px;font-size:.8rem;color:rgb(var(--v-theme-error))}
+.interaction-item--active .interaction-item__error{color:#fff}
+.interaction-item__remove{flex:0 0 auto;opacity:.8}
+.interaction-item__remove:hover{opacity:1}
+.interaction-empty{display:flex;align-items:center;gap:10px;padding:20px;border-radius:8px;background:rgba(255,255,255,.035);border:1px dashed rgba(255,255,255,.08);color:rgba(255,255,255,.55)}
 
 /* One layout engine in both normal and edit mode: persistent column stacks. */
 .dashboard-board{display:grid;grid-template-columns:repeat(var(--dashboard-columns,1),minmax(0,1fr));gap:24px;align-items:start;width:100%;max-width:none}

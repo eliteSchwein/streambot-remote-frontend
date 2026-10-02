@@ -4,7 +4,6 @@
       <v-card v-for="item in interfaces" :key="item.name" variant="tonal" rounded="lg">
         <v-card-text>
           <div class="d-flex align-center ga-2 mb-2">
-            <v-icon>{{ interfaceMuted(item) ? 'mdi-volume-off' : 'mdi-volume-high' }}</v-icon>
             <strong>{{ item.name }}</strong>
             <v-spacer />
             <span>{{ Math.round(interfaceVolume(item) * 100) }}%</span>
@@ -39,7 +38,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
 const props = defineProps<{audio:any}>()
-const emit = defineEmits<{command:[method:string,params:any]}>()
+const emit = defineEmits<{command:[method:string,params:any]; method:[method:string,params:any]}>()
 const interfaceDraft = reactive<Record<string,{volume?:number;muted?:boolean}>>({})
 const outputDraft = reactive<Record<string,{volume?:number;muted?:boolean}>>({})
 const interfaces = computed(() => Object.entries(props.audio?.data ?? {}).map(([name,data]) => ({name,data:data as any})))
@@ -62,10 +61,10 @@ function outputKey(out:any){ return String(out.name ?? out.id) }
 function outputVolume(out:any){ return outputDraft[outputKey(out)]?.volume ?? Number(out.volume ?? 0) }
 function outputMuted(out:any){ return outputDraft[outputKey(out)]?.muted ?? Boolean(out.muted) }
 function outputLabel(out:any){ return String(out.virtual_audio_cable_name ?? out.description ?? out.name ?? 'Audio output') }
-function setInterfaceVolume(item:any, value:number){ ;(interfaceDraft[item.name] ??= {}).volume=value; emit('command','audio.volume',{output:item.name,volume:Math.round(value*100)}) }
-function setInterfaceMute(item:any, muted:boolean){ ;(interfaceDraft[item.name] ??= {}).muted=muted; emit('command','audio.mute',{output:item.name,muted}) }
-function setOutputVolume(out:any, value:number){ ;(outputDraft[outputKey(out)] ??= {}).volume=value; emit('command','audio.volume',{output:out.name,volume:Math.round(value*100)}) }
-function setOutputMute(out:any, muted:boolean){ ;(outputDraft[outputKey(out)] ??= {}).muted=muted; emit('command','audio.mute',{output:out.name,muted}) }
+function setInterfaceVolume(item:any, value:number){ const volume=Math.max(0,Math.min(1,Number(value))); ;(interfaceDraft[item.name] ??= {}).volume=volume; ;(interfaceDraft[item.name] ??= {}).muted=volume<=0; emit('method','set_volume',{interface:item.name,volume}) }
+function setInterfaceMute(item:any, muted:boolean){ const current=interfaceVolume(item); const restore=Number(item.data?.current_volume ?? item.data?.default_volume ?? .2); const volume=muted ? 0 : (current > 0 ? current : (restore > 0 ? restore : .2)); ;(interfaceDraft[item.name] ??= {}).muted=muted; ;(interfaceDraft[item.name] ??= {}).volume=volume; emit('method','set_volume',{interface:item.name,volume}) }
+function setOutputVolume(out:any, value:number){ const volume=Math.max(0,Math.min(1,Number(value))); ;(outputDraft[outputKey(out)] ??= {}).volume=volume; emit('method','set_audio_output_volume',{output:out.name,volume}) }
+function setOutputMute(out:any, muted:boolean){ ;(outputDraft[outputKey(out)] ??= {}).muted=muted; emit('method','set_audio_output_mute',{output:out.name,muted}) }
 </script>
 
 <style scoped>
