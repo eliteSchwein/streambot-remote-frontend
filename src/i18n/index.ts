@@ -56,6 +56,10 @@ const messages: Record<SupportedLocale, Messages> = {
       info: 'Instances are paired from the local StreamDing integration. Moderator access is synchronized by StreamDing and is not managed in this panel.',
       lastSeen: 'Last seen {date}',
       loadError: 'Could not load instances.',
+      remove: 'Remove instance',
+      removeTitle: 'Remove instance',
+      removeConfirm: 'Remove {name}? This permanently unpairs the instance and removes its cloud state. This action cannot be undone.',
+      removeError: 'Could not remove instance.',
     },
     instance: {
       subtitle: 'Remote controls provided by this StreamDing instance.',
@@ -217,6 +221,10 @@ const messages: Record<SupportedLocale, Messages> = {
       info: 'Instanzen werden über die lokale StreamDing-Integration gekoppelt. Moderator-Zugriffe werden von StreamDing synchronisiert und nicht in diesem Panel verwaltet.',
       lastSeen: 'Zuletzt gesehen: {date}',
       loadError: 'Instanzen konnten nicht geladen werden.',
+      remove: 'Instanz entfernen',
+      removeTitle: 'Instanz entfernen',
+      removeConfirm: '{name} entfernen? Dadurch wird die Instanz dauerhaft entkoppelt und ihr Cloud-Status gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.',
+      removeError: 'Instanz konnte nicht entfernt werden.',
     },
     instance: {
       subtitle: 'Remote-Steuerung dieser StreamDing-Instanz.',

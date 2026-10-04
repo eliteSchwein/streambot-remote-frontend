@@ -7,8 +7,15 @@ export type DashboardSectionName =
   | 'music' | 'giveaway' | 'interactions' | 'auto_macros' | 'macros'
   | 'channel_points' | 'rotating_scene' | 'audio' | 'obs' | 'yolobox'
 export type DashboardCardConfig = { macros?: string[]; obs_connection?: string }
-export type DashboardLayoutItem = { key: DashboardSectionName; visible: boolean; order: number; column?: number; config?: DashboardCardConfig }
-export type DashboardLayoutSettings = { version: 1 | 2 | 3; sections: DashboardLayoutItem[] }
+export type DashboardLayoutItem = {
+  id?: string
+  key: DashboardSectionName
+  visible: boolean
+  order: number
+  column?: number
+  config?: DashboardCardConfig
+}
+export type DashboardLayoutSettings = { version: 1 | 2 | 3 | 4; sections: DashboardLayoutItem[] }
 export type UserSettings = {
   language: 'en' | 'de'
   dashboard_layouts?: Record<string, DashboardLayoutSettings>
@@ -36,6 +43,24 @@ function normalizeInstances(value: any): RemoteInstance[] {
   return asList<any>(value, ['instances', 'items', 'data'])
     .map(normalizeInstance)
     .filter(Boolean) as RemoteInstance[]
+}
+
+export function instanceIsOwner(instance: any, me?: any): boolean {
+  if (!instance || typeof instance !== 'object') return false
+
+  const explicit = instance.is_owner ?? instance.isOwner ?? instance.owner ?? instance.owned_by_me ?? instance.ownedByMe
+  if (typeof explicit === 'boolean') return explicit
+
+  const role = String(
+    instance.access_role ?? instance.accessRole ?? instance.role ?? instance.permission ?? instance.access ?? ''
+  ).trim().toLowerCase()
+  if (role) return ['owner', 'broadcaster'].includes(role)
+
+  const ownerId = firstNonEmptyString(
+    instance.owner_id, instance.ownerId, instance.user_id, instance.userId, instance.owner?.id, instance.owner?.user_id
+  )
+  const meId = firstNonEmptyString(me?.id, me?.user_id, me?.userId, me?.twitch_id, me?.twitchId)
+  return Boolean(ownerId && meId && ownerId === meId)
 }
 
 function firstNonEmptyString(...values: any[]): string {
@@ -116,6 +141,15 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 let socketStopped = false
 
+type InstanceSocketState = {
+  socket: WebSocket | null
+  reconnectTimer: ReturnType<typeof setTimeout> | null
+  reconnectAttempts: number
+  stopped: boolean
+  waiters: Set<SocketWaiter>
+}
+const instanceSockets = new Map<string, InstanceSocketState>()
+
 type SocketWaiter = {
   predicate: (message: any) => boolean
   resolve: (message: any) => void
@@ -147,9 +181,56 @@ function waitForSocketMessage(predicate: (message: any) => boolean, timeout = 10
   })
 }
 
+function getInstanceSocketState(instanceId: string): InstanceSocketState {
+  let state = instanceSockets.get(instanceId)
+  if (!state) {
+    state = {
+      socket: null,
+      reconnectTimer: null,
+      reconnectAttempts: 0,
+      stopped: false,
+      waiters: new Set<SocketWaiter>(),
+    }
+    instanceSockets.set(instanceId, state)
+  }
+  return state
+}
+
+function settleInstanceWaiters(instanceId: string, message: any) {
+  const state = instanceSockets.get(instanceId)
+  if (!state) return
+  for (const waiter of Array.from(state.waiters)) {
+    if (!waiter.predicate(message)) continue
+    clearTimeout(waiter.timer)
+    state.waiters.delete(waiter)
+    waiter.resolve(message)
+  }
+}
+
+function waitForInstanceSocketMessage(instanceId: string, predicate: (message: any) => boolean, timeout = 10_000): Promise<any> {
+  const state = getInstanceSocketState(instanceId)
+  return new Promise((resolve, reject) => {
+    const waiter = {} as SocketWaiter
+    waiter.predicate = predicate
+    waiter.resolve = resolve
+    waiter.reject = reject
+    waiter.timer = setTimeout(() => {
+      state.waiters.delete(waiter)
+      reject(new Error('Instance WebSocket request timed out'))
+    }, timeout)
+    state.waiters.add(waiter)
+  })
+}
+
 function socketSend(payload: Record<string, any>) {
   if (!userSocket || userSocket.readyState !== WebSocket.OPEN) throw new Error('WebSocket is not connected')
   userSocket.send(JSON.stringify(payload))
+}
+
+function instanceSocketSend(instanceId: string, payload: Record<string, any>) {
+  const socket = instanceSockets.get(instanceId)?.socket
+  if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('Instance WebSocket is not connected')
+  socket.send(JSON.stringify(payload))
 }
 
 function eventType(message: any) {
@@ -308,6 +389,37 @@ export const useAppStore = defineStore('app', {
       return updated
     },
 
+    async deleteInstance(id: string | number) {
+      const instanceId = String(id)
+      const instance = this.instances.find(candidate => instanceKey(candidate) === instanceId)
+      if (!instance || !instanceIsOwner(instance, this.me)) throw new Error('Only the instance owner can remove this instance')
+
+      await this.waitForUserSocket()
+      const response = waitForSocketMessage(message => {
+        const type = eventType(message)
+        if (type === 'notify_instance_deleted') {
+          const payload = messagePayload(message)
+          const deletedId = messageInstanceId(message) || instanceKey(payload?.instance ?? payload) || firstNonEmptyString(payload?.instance_id, payload?.id)
+          return !deletedId || deletedId === instanceId
+        }
+        return type === 'notify_error'
+      })
+
+      socketSend({ type: 'delete_instance', instance_id: instanceId })
+      const message = await response
+      if (eventType(message) === 'notify_error') {
+        const payload = messagePayload(message)
+        throw new Error(String(payload?.error ?? payload?.message ?? 'Could not remove instance'))
+      }
+
+      // The notify handler performs the same cleanup, but doing it here keeps the
+      // UI deterministic even if the backend broadcasts the refreshed instance list first.
+      this.instances = this.instances.filter(candidate => instanceKey(candidate) !== instanceId)
+      delete this.dashboards[instanceId]
+      this.disconnectInstanceSocket(instanceId)
+      if (this.activeDashboardId === instanceId) this.activeDashboardId = null
+    },
+
     async waitForUserSocket(timeout = 10_000) {
       if (userSocket?.readyState === WebSocket.OPEN) return
       this.connectUserSocket()
@@ -315,20 +427,21 @@ export const useAppStore = defineStore('app', {
     },
 
     async openDashboard(id: string | number) {
-      this.activeDashboardId = String(id)
-      // No request is sent here. The cloud pushes all authorized dashboard snapshots,
-      // section updates and cached YoloBox previews over /ws/user automatically.
-      await this.waitForUserSocket()
+      const key = String(id)
+      this.activeDashboardId = key
+      await this.waitForInstanceSocket(key)
     },
 
     closeDashboard(id?: string | number) {
+      const key = id === undefined ? this.activeDashboardId : String(id)
+      if (key) this.disconnectInstanceSocket(key)
       if (id === undefined || this.activeDashboardId === String(id)) this.activeDashboardId = null
     },
 
     async streamdingCommand(id: string | number, method: string, params: any = {}, section?: DashboardSectionName) {
-      await this.waitForUserSocket()
       const key = String(id)
-      socketSend({
+      await this.waitForInstanceSocket(key)
+      instanceSocketSend(key, {
         type: 'dashboard_action',
         instance_id: key,
         section: section ?? null,
@@ -341,19 +454,190 @@ export const useAppStore = defineStore('app', {
     },
 
     async streamdingMethod(id: string | number, method: string, params: any = {}, section?: DashboardSectionName) {
-      await this.waitForUserSocket()
+      const key = String(id)
+      await this.waitForInstanceSocket(key)
       const payload = params ?? {}
-      socketSend({
+      instanceSocketSend(key, {
         type: 'dashboard_action',
-        instance_id: String(id),
+        instance_id: key,
         section: section ?? null,
-        // The cloud dashboard_action envelope always requires `action`/`payload`.
-        // Supplying method/params as well selects the native StreamDing WS passthrough.
         action: method,
         payload,
         method,
         params: payload,
       })
+    },
+
+    async waitForInstanceSocket(id: string | number, timeout = 10_000) {
+      const key = String(id)
+      const state = getInstanceSocketState(key)
+      if (state.socket?.readyState === WebSocket.OPEN) return
+      this.connectInstanceSocket(key)
+      const message = await waitForInstanceSocketMessage(
+        key,
+        message => ['__socket_open__', '__socket_closed__'].includes(eventType(message)) || eventType(message) === 'notify_error',
+        timeout,
+      )
+      if (eventType(message) !== '__socket_open__') {
+        const payload = messagePayload(message)
+        throw new Error(String(payload?.message ?? payload?.error ?? message?.reason ?? 'Instance WebSocket connection failed'))
+      }
+    },
+
+    handleInstanceSocketMessage(instanceId: string, message: any) {
+      const type = eventType(message)
+      const payload = messagePayload(message)
+
+      if (type === 'notify_dashboard_snapshot') {
+        const rawSnapshot = payload?.sections
+          ? payload
+          : payload?.dashboard
+            ?? payload?.snapshot?.dashboard
+            ?? payload?.snapshot
+            ?? payload?.state?.dashboard
+            ?? payload?.state
+            ?? payload?.data?.dashboard
+            ?? payload?.data
+            ?? payload
+        const snapshot = normalizeDashboardSnapshot(rawSnapshot)
+        if (Object.keys(snapshot).length) this.dashboards[instanceId] = snapshot
+        return
+      }
+
+      if (type === 'notify_dashboard_update') {
+        const fullDashboard = payload?.dashboard ?? payload?.state?.dashboard
+        if (fullDashboard && typeof fullDashboard === 'object') {
+          this.dashboards[instanceId] = {
+            ...(this.dashboards[instanceId] ?? {}),
+            ...normalizeDashboardSnapshot(fullDashboard),
+          }
+          return
+        }
+
+        const section = inferDashboardSection(message, payload)
+        if (!section) {
+          const present = dashboardSections.filter(key => Object.prototype.hasOwnProperty.call(payload ?? {}, key))
+          if (present.length) {
+            const current = { ...(this.dashboards[instanceId] ?? {}) }
+            for (const key of present) current[key] = payload[key]
+            this.dashboards[instanceId] = current
+          }
+          return
+        }
+
+        const value = payload?.value
+          ?? payload?.state
+          ?? payload?.section_data
+          ?? payload?.sectionData
+          ?? payload?.data?.[section]
+          ?? payload?.data
+          ?? payload?.[section]
+          ?? payload?.payload
+          ?? payload
+        this.dashboards[instanceId] = { ...(this.dashboards[instanceId] ?? {}), [section]: value }
+        return
+      }
+
+      if (type === 'notify_yolobox_preview') {
+        const value = payload?.preview ?? payload?.image ?? payload?.data ?? payload
+        const current = this.dashboards[instanceId] ?? {}
+        this.dashboards[instanceId] = { ...current, yolobox: { ...(current.yolobox ?? {}), preview: value } }
+        return
+      }
+
+      if (type === 'notify_instance_presence') {
+        const index = this.instances.findIndex(instance => instanceKey(instance) === instanceId)
+        const presence = payload?.presence ?? payload?.instance ?? payload
+        if (index >= 0) this.instances[index] = { ...this.instances[index], ...presence, id: instanceId }
+        return
+      }
+
+      if (type === 'notify_moderators_update') {
+        this.moderators = asList<any>(payload, ['moderators', 'items', 'data'])
+        return
+      }
+
+      if (type === 'notify_dashboard_action_result') {
+        if (payload?.success === false || payload?.error) this.error = String(payload?.error ?? 'Dashboard action failed')
+        return
+      }
+
+      if (type === 'notify_error') {
+        this.error = String(payload?.message ?? payload?.error ?? message?.message ?? 'Instance WebSocket error')
+      }
+    },
+
+    connectInstanceSocket(id: string | number) {
+      const key = String(id)
+      const state = getInstanceSocketState(key)
+      if (state.socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(state.socket.readyState)) return
+
+      state.stopped = false
+      if (state.reconnectTimer) {
+        clearTimeout(state.reconnectTimer)
+        state.reconnectTimer = null
+      }
+
+      const socket = new WebSocket(backendWsUrl(`/ws/instance/${encodeURIComponent(key)}`))
+      state.socket = socket
+
+      socket.onopen = () => {
+        if (state.socket !== socket) return
+        state.reconnectAttempts = 0
+        settleInstanceWaiters(key, { type: '__socket_open__' })
+      }
+
+      socket.onmessage = (event) => {
+        if (state.socket !== socket) return
+        try {
+          const message = JSON.parse(String(event.data))
+          settleInstanceWaiters(key, message)
+          this.handleInstanceSocketMessage(key, message)
+        } catch { /* ignore unknown frames */ }
+      }
+
+      socket.onclose = (event) => {
+        if (state.socket !== socket) return
+        state.socket = null
+        settleInstanceWaiters(key, { type: '__socket_closed__', code: event.code, reason: event.reason })
+        if (state.stopped) return
+
+        // Revoked instances are removed from the global instance list. Never keep
+        // reconnecting a per-instance socket after access disappeared.
+        if (!this.instances.some(instance => instanceKey(instance) === key)) {
+          state.stopped = true
+          return
+        }
+
+        state.reconnectAttempts += 1
+        const delay = Math.min(30_000, 1000 * 2 ** Math.min(state.reconnectAttempts - 1, 5))
+        state.reconnectTimer = setTimeout(() => this.connectInstanceSocket(key), delay)
+      }
+    },
+
+    disconnectInstanceSocket(id: string | number) {
+      const key = String(id)
+      const state = instanceSockets.get(key)
+      if (!state) return
+
+      state.stopped = true
+      if (state.reconnectTimer) {
+        clearTimeout(state.reconnectTimer)
+        state.reconnectTimer = null
+      }
+      for (const waiter of state.waiters) {
+        clearTimeout(waiter.timer)
+        waiter.reject(new Error('Instance WebSocket disconnected'))
+      }
+      state.waiters.clear()
+
+      if (state.socket) {
+        const socket = state.socket
+        state.socket = null
+        socket.onclose = null
+        socket.close()
+      }
+      instanceSockets.delete(key)
     },
 
     connectUserSocket() {
@@ -426,11 +710,24 @@ export const useAppStore = defineStore('app', {
             return
           }
 
+          if (type === 'notify_instance_deleted') {
+            const instanceId = messageInstanceId(message)
+              || instanceKey(payload?.instance ?? payload)
+              || firstNonEmptyString(payload?.instance_id, payload?.id)
+            if (!instanceId) return
+            this.instances = this.instances.filter(instance => instanceKey(instance) !== instanceId)
+            delete this.dashboards[instanceId]
+            this.disconnectInstanceSocket(instanceId)
+            if (this.activeDashboardId === instanceId) this.activeDashboardId = null
+            return
+          }
+
           if (type === 'notify_instance_access_revoked') {
             const instanceId = messageInstanceId(message) || instanceKey(payload?.instance ?? payload)
             if (!instanceId) return
             this.instances = this.instances.filter(instance => instanceKey(instance) !== instanceId)
             delete this.dashboards[instanceId]
+            this.disconnectInstanceSocket(instanceId)
             if (this.activeDashboardId === instanceId) this.activeDashboardId = null
             return
           }
@@ -567,6 +864,7 @@ export const useAppStore = defineStore('app', {
     disconnectUserSocket() {
       socketStopped = true
       this.userSocketConnected = false
+      for (const instanceId of Array.from(instanceSockets.keys())) this.disconnectInstanceSocket(instanceId)
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
       for (const waiter of socketWaiters) {
         clearTimeout(waiter.timer)

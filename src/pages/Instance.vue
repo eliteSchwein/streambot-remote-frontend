@@ -12,7 +12,7 @@
     </template>
 
     <template #actions>
-      <v-menu v-if="hiddenSections.length">
+      <v-menu v-if="hiddenSections.length || addableObsConnections.length">
         <template #activator="{ props }">
           <v-btn v-bind="props" prepend-icon="mdi-plus" variant="text">
             {{ t('instance.addCard') }}
@@ -21,10 +21,19 @@
         <v-list density="comfortable">
           <v-list-item
             v-for="section in hiddenSections"
-            :key="section.key"
+            :key="section.id"
             :prepend-icon="section.icon"
             :title="t(`sections.${section.key}`)"
-            @click="showSection(section.key)"
+            @click="showSection(section.id)"
+          />
+          <v-divider v-if="hiddenSections.length && addableObsConnections.length" />
+          <v-list-subheader v-if="addableObsConnections.length">OBS</v-list-subheader>
+          <v-list-item
+            v-for="connection in addableObsConnections"
+            :key="`obs-add-${connection}`"
+            prepend-icon="mdi-video-outline"
+            :title="`OBS · ${connection}`"
+            @click="addObsCard(connection)"
           />
         </v-list>
       </v-menu>
@@ -58,7 +67,7 @@
           @dragover.prevent
           @drop.prevent="onDropAt(columnIndex, column.length)"
         >
-          <template v-for="(section, sectionIndex) in column" :key="section.key">
+          <template v-for="(section, sectionIndex) in column" :key="section.id">
             <div
               v-if="editLayout"
               class="dashboard-drop-slot"
@@ -70,9 +79,9 @@
             <v-card
               rounded="xl"
               class="dashboard-card"
-              :class="{ 'dashboard-card--editing': editLayout, 'dashboard-card--dragging': draggedSection === section.key }"
+              :class="{ 'dashboard-card--editing': editLayout, 'dashboard-card--dragging': draggedSection === section.id }"
               :draggable="editLayout"
-              @dragstart="onDragStart($event, section.key)"
+              @dragstart="onDragStart($event, section.id)"
               @dragend="onDragEnd"
             >
           <v-card-title class="dashboard-card__title">
@@ -85,10 +94,14 @@
             <div v-if="editLayout" class="dashboard-card__edit-actions">
               <v-btn v-if="section.key === 'macros'" icon="mdi-tune-variant" size="x-small" variant="text" :title="t('instance.selectMacros')" @click.stop="openMacroSelector(section)" />
               <v-icon class="dashboard-drag-handle" :title="t('instance.moveCard')">mdi-drag</v-icon>
-              <v-btn icon="mdi-close" size="x-small" variant="text" :title="t('instance.removeCard')" @click.stop="hideSection(section.key)" />
+              <v-btn icon="mdi-close" size="x-small" variant="text" :title="t('instance.removeCard')" @click.stop="hideSection(section.id)" />
             </div>
           </v-card-title>
-            <v-card-text>
+            <v-card-text
+              :class="{ 'dashboard-card__content--offline': !online }"
+              :inert="!online || undefined"
+              :aria-disabled="!online ? 'true' : undefined"
+            >
               <template v-if="section.key === 'music'">
                 <div class="music-card">
                   <div class="music-meta">
@@ -312,7 +325,7 @@
                   v-if="editLayout"
                   class="mb-4"
                   :model-value="obsConnectionFor(section)"
-                  :items="obsConnectionNames"
+                  :items="obsConnectionOptions(section)"
                   :label="t('instance.obsConnection')"
                   prepend-inner-icon="mdi-connection"
                   variant="outlined" density="comfortable" hide-details
@@ -347,7 +360,7 @@
           <v-icon size="48" class="mb-3">mdi-view-dashboard-outline</v-icon>
           <div class="text-h6 mb-2">{{ t('instance.noDashboardCards') }}</div>
           <div class="text-body-2 text-medium-emphasis mb-5">{{ t('instance.noDashboardCardsHint') }}</div>
-          <v-menu v-if="hiddenSections.length">
+          <v-menu v-if="hiddenSections.length || addableObsConnections.length">
             <template #activator="{ props }">
               <v-btn v-bind="props" prepend-icon="mdi-plus" color="primary" variant="tonal">
                 {{ t('instance.addCard') }}
@@ -356,10 +369,19 @@
             <v-list>
               <v-list-item
                 v-for="section in hiddenSections"
-                :key="section.key"
+                :key="section.id"
                 :prepend-icon="section.icon"
                 :title="t(`sections.${section.key}`)"
-                @click="showSection(section.key)"
+                @click="showSection(section.id)"
+              />
+              <v-divider v-if="hiddenSections.length && addableObsConnections.length" />
+              <v-list-subheader v-if="addableObsConnections.length">OBS</v-list-subheader>
+              <v-list-item
+                v-for="connection in addableObsConnections"
+                :key="`obs-empty-add-${connection}`"
+                prepend-icon="mdi-video-outline"
+                :title="`OBS · ${connection}`"
+                @click="addObsCard(connection)"
               />
             </v-list>
           </v-menu>
@@ -401,7 +423,7 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import PageShell from '@/components/PageShell.vue'
 import RemoteObsControl from '@/components/remote/RemoteObsControl.vue'
 import RemoteAudioControl from '@/components/remote/RemoteAudioControl.vue'
@@ -424,10 +446,25 @@ const previewFailed = ref(false)
 const instance = computed(() => store.instances.find((v:any) => instanceKey(v) === id.value))
 const dashboard = computed<any>(() => store.dashboards[id.value] ?? {})
 const sectionIcons = {music:'mdi-music',giveaway:'mdi-gift-outline',interactions:'mdi-timer-sand',auto_macros:'mdi-robot-outline',macros:'mdi-gesture-tap-button',channel_points:'mdi-star-circle-outline',rotating_scene:'mdi-camera-switch-outline',audio:'mdi-volume-high',obs:'mdi-video-outline',yolobox:'mdi-monitor-eye'} as Record<DashboardSectionName,string>
-const defaultDashboardLayout = dashboardSections.map(key => ({ key, icon: sectionIcons[key], visible: true }))
-const dashboardLayout = ref<Array<{ key: DashboardSectionName; icon: string; visible: boolean; column: number; config?: any }>>(defaultDashboardLayout.map((v,index) => ({ ...v, column: index % 3 })))
+type DashboardCard = {
+  id: string
+  key: DashboardSectionName
+  icon: string
+  visible: boolean
+  column: number
+  config?: any
+}
+
+const defaultDashboardLayout: DashboardCard[] = dashboardSections.map((key,index) => ({
+  id: key,
+  key,
+  icon: sectionIcons[key],
+  visible: true,
+  column: index % 3,
+}))
+const dashboardLayout = ref<DashboardCard[]>(defaultDashboardLayout.map(item => ({ ...item, config: item.config ? { ...item.config } : undefined })))
 const editLayout = ref(false)
-const draggedSection = ref<DashboardSectionName | null>(null)
+const draggedSection = ref<string | null>(null)
 const dropSlot = ref<{ column:number; index:number } | null>(null)
 const dashboardBoard = ref<HTMLElement | null>(null)
 const dashboardColumnCount = ref(3)
@@ -446,7 +483,7 @@ const dashboardColumns = computed(() => {
   }
   return columns
 })
-const hiddenSections = computed(() => dashboardLayout.value.filter(section => !section.visible))
+const hiddenSections = computed(() => dashboardLayout.value.filter(section => section.key !== 'obs' && !section.visible))
 const instanceName = computed(() => instance.value?.name ?? instance.value?.hostname ?? instance.value?.display_name ?? `${t('common.instance')} ${id.value}`)
 const online = computed(() => Boolean(instance.value?.online ?? instance.value?.connected ?? instance.value?.is_connected))
 const previewUrl = computed(() => {
@@ -492,6 +529,15 @@ const obsConnections = computed(() => {
   }))
 })
 const obsConnectionNames = computed(() => obsConnections.value.map(item => item.name))
+const addableObsConnections = computed(() => {
+  const visibleConnections = new Set(
+    dashboardLayout.value
+      .filter(item => item.key === 'obs' && item.visible)
+      .map(item => obsConnectionFor(item))
+      .filter(Boolean)
+  )
+  return obsConnectionNames.value.filter(name => !visibleConnections.has(name))
+})
 const yolobox = computed<any>(() => sectionData('yolobox') ?? {})
 const musicProgress = computed(() => {
   const direct = Number(music.value?.progress_percentage)
@@ -560,23 +606,65 @@ function interactionProgress(item:any): number {
   return Math.max(0,Math.min(100,((duration-eta)/duration)*100))
 }
 
-function normalizeDashboardLayout(items: any): Array<{ key: DashboardSectionName; icon: string; visible: boolean; column: number; config?: any }> {
-  const raw = Array.isArray(items) ? items : []
-  const byKey = new Map(raw.map((item:any) => [String(item?.key), item]))
-  const sorted = dashboardSections.map(key => {
-    const saved:any = byKey.get(key)
-    return {
+function uniqueCardId(base:string, used:Set<string>): string {
+  let id = base || 'card'
+  let suffix = 2
+  while (used.has(id)) id = `${base}-${suffix++}`
+  used.add(id)
+  return id
+}
+
+function normalizeDashboardLayout(items: any): DashboardCard[] {
+  const raw = Array.isArray(items) ? [...items] : []
+  const usedIds = new Set<string>()
+  const result: Array<DashboardCard & { order:number }> = []
+
+  // All non-OBS sections remain singletons.
+  for (const key of dashboardSections.filter(key => key !== 'obs')) {
+    const saved:any = raw.find((item:any) => String(item?.key) === key)
+    result.push({
+      id: uniqueCardId(String(saved?.id ?? key), usedIds),
       key,
       icon: sectionIcons[key],
       visible: saved?.visible !== false,
       config: saved?.config && typeof saved.config === 'object' ? { ...saved.config } : undefined,
       column: Number.isFinite(Number(saved?.column)) ? Math.max(0, Number(saved.column)) : -1,
       order: Number(saved?.order ?? dashboardSections.indexOf(key)),
-    }
-  }).sort((a,b) => a.order - b.order)
+    })
+  }
+
+  // OBS is repeatable. Preserve every saved OBS card independently.
+  const savedObs = raw.filter((item:any) => String(item?.key) === 'obs')
+  if (savedObs.length) {
+    savedObs.forEach((saved:any, index:number) => {
+      const connection = String(saved?.config?.obs_connection ?? '').trim()
+      const baseId = String(saved?.id ?? (connection ? `obs:${connection}` : `obs:${index + 1}`))
+      result.push({
+        id: uniqueCardId(baseId, usedIds),
+        key: 'obs',
+        icon: sectionIcons.obs,
+        visible: saved?.visible !== false,
+        config: saved?.config && typeof saved.config === 'object' ? { ...saved.config } : undefined,
+        column: Number.isFinite(Number(saved?.column)) ? Math.max(0, Number(saved.column)) : -1,
+        order: Number(saved?.order ?? dashboardSections.indexOf('obs') + index / 10),
+      })
+    })
+  } else {
+    result.push({
+      id: uniqueCardId('obs', usedIds),
+      key: 'obs',
+      icon: sectionIcons.obs,
+      visible: true,
+      column: -1,
+      order: dashboardSections.indexOf('obs'),
+    })
+  }
+
+  result.sort((a,b) => a.order - b.order)
+
   // v1/v2 layouts had no persistent column. Distribute those cards in stable order.
   let migrateColumn = 0
-  return sorted.map(({order,...item}) => ({
+  return result.map(({order,...item}) => ({
     ...item,
     column: item.column >= 0 ? item.column : (migrateColumn++ % 3),
   }))
@@ -589,8 +677,22 @@ let layoutSaveTimer: ReturnType<typeof setTimeout> | null = null
 let layoutSaveGeneration = 0
 function serializedDashboardLayout(): DashboardLayoutItem[] {
   let order = 0
-  return dashboardColumns.value.flatMap((column,columnIndex) => column.map(item => ({ key:item.key, visible:item.visible, order:order++, column:columnIndex, ...(item.config ? { config:item.config } : {}) }))).concat(
-    dashboardLayout.value.filter(item => !item.visible).map(item => ({ key:item.key, visible:false, order:order++, column:item.column ?? 0, ...(item.config ? { config:item.config } : {}) }))
+  return dashboardColumns.value.flatMap((column,columnIndex) => column.map(item => ({
+    id:item.id,
+    key:item.key,
+    visible:item.visible,
+    order:order++,
+    column:columnIndex,
+    ...(item.config ? { config:item.config } : {}),
+  }))).concat(
+    dashboardLayout.value.filter(item => !item.visible).map(item => ({
+      id:item.id,
+      key:item.key,
+      visible:false,
+      order:order++,
+      column:item.column ?? 0,
+      ...(item.config ? { config:item.config } : {}),
+    }))
   )
 }
 function saveDashboardLayout(){
@@ -598,7 +700,7 @@ function saveDashboardLayout(){
   const generation = ++layoutSaveGeneration
   layoutSaveTimer = setTimeout(async () => {
     const layouts = { ...(store.userSettings?.dashboard_layouts ?? {}) }
-    layouts[id.value] = { version: 3, sections: serializedDashboardLayout() }
+    layouts[id.value] = { version: 4, sections: serializedDashboardLayout() }
     try {
       await store.updateUserSettings({ dashboard_layouts: layouts })
     } catch (error:any) {
@@ -606,9 +708,14 @@ function saveDashboardLayout(){
     }
   }, 250)
 }
-function layoutItem(sectionOrKey:any){
-  const key = typeof sectionOrKey === 'string' ? sectionOrKey : sectionOrKey?.key
-  return dashboardLayout.value.find(item => item.key === key)
+function layoutItem(sectionOrId:any){
+  if (sectionOrId && typeof sectionOrId === 'object') {
+    const cardId = String(sectionOrId.id ?? '')
+    if (cardId) return dashboardLayout.value.find(item => item.id === cardId)
+  }
+  const value = String(sectionOrId ?? '')
+  return dashboardLayout.value.find(item => item.id === value)
+    ?? dashboardLayout.value.find(item => item.key === value)
 }
 function openMacroSelector(section:any){
   macroSelectorSection.value = section
@@ -650,32 +757,71 @@ function obsConnectionFor(section:any): string {
   const connected = obsConnections.value.find(item => item.connected)?.name
   return connected ?? obsConnectionNames.value[0] ?? 'default'
 }
+function obsConnectionOptions(section:any): string[]{
+  const current = obsConnectionFor(section)
+  const used = new Set(
+    dashboardLayout.value
+      .filter(item => item.key === 'obs' && item.visible && item.id !== section?.id)
+      .map(item => obsConnectionFor(item))
+      .filter(Boolean)
+  )
+  return obsConnectionNames.value.filter(name => name === current || !used.has(name))
+}
 function setObsConnection(section:any, value:string){
   const item:any = layoutItem(section); if(!item) return
   item.config = { ...(item.config ?? {}), obs_connection: value || undefined }
   saveDashboardLayout()
 }
-function hideSection(key: DashboardSectionName){
-  const section = dashboardLayout.value.find(item => item.key === key)
+function shortestDashboardColumn(): number {
+  const counts = dashboardColumns.value.map(column => column.length)
+  return counts.indexOf(Math.min(...counts))
+}
+
+function hideSection(cardId: string){
+  const section = dashboardLayout.value.find(item => item.id === cardId)
   if (!section) return
   section.visible = false
   saveDashboardLayout()
 }
-function showSection(key: DashboardSectionName){
-  const section = dashboardLayout.value.find(item => item.key === key)
+
+function showSection(cardId: string){
+  const section = dashboardLayout.value.find(item => item.id === cardId)
   if (!section) return
   section.visible = true
-  const counts = dashboardColumns.value.map(column => column.length)
-  section.column = counts.indexOf(Math.min(...counts))
+  section.column = shortestDashboardColumn()
   saveDashboardLayout()
 }
-function onDragStart(event: DragEvent, key: DashboardSectionName){
+
+function addObsCard(connection:string){
+  const existing = dashboardLayout.value.find(item =>
+    item.key === 'obs' && String(item.config?.obs_connection ?? '') === connection
+  )
+  if (existing) {
+    existing.visible = true
+    existing.column = shortestDashboardColumn()
+    saveDashboardLayout()
+    return
+  }
+
+  const used = new Set(dashboardLayout.value.map(item => item.id))
+  dashboardLayout.value.push({
+    id: uniqueCardId(`obs:${connection}`, used),
+    key: 'obs',
+    icon: sectionIcons.obs,
+    visible: true,
+    column: shortestDashboardColumn(),
+    config: { obs_connection: connection },
+  })
+  saveDashboardLayout()
+}
+
+function onDragStart(event: DragEvent, cardId: string){
   if (!editLayout.value) { event.preventDefault(); return }
-  draggedSection.value = key
+  draggedSection.value = cardId
   dropSlot.value = null
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', key)
+    event.dataTransfer.setData('text/plain', cardId)
   }
 }
 function onDragSlot(column:number, index:number){
@@ -683,21 +829,19 @@ function onDragSlot(column:number, index:number){
   dropSlot.value = { column, index }
 }
 function onDropAt(column:number, index:number){
-  const sourceKey = draggedSection.value
-  if (!sourceKey) return
-  const source = dashboardLayout.value.find(item => item.key === sourceKey)
+  const sourceId = draggedSection.value
+  if (!sourceId) return
+  const source = dashboardLayout.value.find(item => item.id === sourceId)
   if (!source) return onDragEnd()
 
   const count = Math.max(1, dashboardColumnCount.value)
   const targetColumnIndex = Math.max(0, Math.min(count - 1, column))
   const columns = Array.from({ length: count }, (_, col) =>
-    (dashboardColumns.value[col] ?? []).filter(item => item.key !== sourceKey)
+    (dashboardColumns.value[col] ?? []).filter(item => item.id !== sourceId)
   )
 
-  // Slot indexes are based on the pre-removal column. If the card came from the
-  // same column and was above the selected slot, compensate for its removal.
   const sourceColumnIndex = Math.max(0, Math.min(count - 1, Number(source.column ?? 0)))
-  const sourceOriginalIndex = (dashboardColumns.value[sourceColumnIndex] ?? []).findIndex(item => item.key === sourceKey)
+  const sourceOriginalIndex = (dashboardColumns.value[sourceColumnIndex] ?? []).findIndex(item => item.id === sourceId)
   let targetIndex = Math.max(0, Math.min(index, columns[targetColumnIndex].length))
   if (sourceColumnIndex === targetColumnIndex && sourceOriginalIndex >= 0 && sourceOriginalIndex < index) {
     targetIndex = Math.max(0, targetIndex - 1)
@@ -717,14 +861,30 @@ function onDragEnd(){
   dropSlot.value = null
 }
 function resetDashboardLayout(){
-  dashboardLayout.value = defaultDashboardLayout.map((v,index) => ({ ...v, column:index % Math.max(1,dashboardColumnCount.value) }))
+  dashboardLayout.value = defaultDashboardLayout.map((item,index) => ({
+    ...item,
+    config: item.config ? { ...item.config } : undefined,
+    column:index % Math.max(1,dashboardColumnCount.value),
+  }))
   saveDashboardLayout()
 }
-watch(id, () => loadDashboardLayout())
+watch(id, (newId, oldId) => {
+  if (oldId && oldId !== newId) store.closeDashboard(oldId)
+  loadDashboardLayout()
+  if (newId && oldId && oldId !== newId) {
+    store.openDashboard(newId).catch((e:any) => { store.error = e?.message ?? t('instance.loadError') })
+  }
+})
 watch(() => store.userSettings?.dashboard_layouts?.[id.value], () => loadDashboardLayout(), { deep: true })
 
-async function command(method:string, params:any={}, section?:DashboardSectionName){ try{ await store.streamdingCommand(id.value,method,params,section) } catch(e:any){ store.error=e?.message ?? t('instance.actionError') } }
-async function nativeMethod(method:string, params:any={}, section?:DashboardSectionName){ try{ await store.streamdingMethod(id.value,method,params,section) } catch(e:any){ store.error=e?.message ?? t('instance.actionError') } }
+async function command(method:string, params:any={}, section?:DashboardSectionName){
+  if (!online.value) return
+  try{ await store.streamdingCommand(id.value,method,params,section) } catch(e:any){ store.error=e?.message ?? t('instance.actionError') }
+}
+async function nativeMethod(method:string, params:any={}, section?:DashboardSectionName){
+  if (!online.value) return
+  try{ await store.streamdingMethod(id.value,method,params,section) } catch(e:any){ store.error=e?.message ?? t('instance.actionError') }
+}
 onMounted(() => {
   loadDashboardLayout()
   const updateColumns = () => {
@@ -738,7 +898,24 @@ onMounted(() => {
   }
   store.openDashboard(id.value).catch((e:any) => { store.error = e?.message ?? t('instance.loadError') })
 })
-onBeforeUnmount(() => { if (layoutSaveTimer) clearTimeout(layoutSaveTimer); boardResizeObserver?.disconnect(); boardResizeObserver = null; store.closeDashboard(id.value) })
+const closeInstanceDashboardSocket = () => {
+  store.closeDashboard(id.value)
+}
+
+onBeforeRouteLeave(() => {
+  closeInstanceDashboardSocket()
+})
+
+const onPageHide = () => closeInstanceDashboardSocket()
+if (typeof window !== 'undefined') window.addEventListener('pagehide', onPageHide)
+
+onBeforeUnmount(() => {
+  if (layoutSaveTimer) clearTimeout(layoutSaveTimer)
+  boardResizeObserver?.disconnect()
+  boardResizeObserver = null
+  if (typeof window !== 'undefined') window.removeEventListener('pagehide', onPageHide)
+  closeInstanceDashboardSocket()
+})
 </script>
 
 <style scoped>
@@ -787,6 +964,10 @@ onBeforeUnmount(() => { if (layoutSaveTimer) clearTimeout(layoutSaveTimer); boar
 .dashboard-column{display:flex;flex-direction:column;gap:22px;min-width:0;min-height:72px}
 .dashboard-card{width:100%;min-width:0;overflow:hidden;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.028);transition:border-color .16s ease,transform .16s ease,box-shadow .16s ease,opacity .16s ease}
 .dashboard-card__title{display:flex;align-items:center;gap:10px;min-height:58px;border-bottom:1px solid rgba(255,255,255,.055)}
+.dashboard-card__content--offline{opacity:.52;filter:saturate(.55);cursor:not-allowed;user-select:none}
+.dashboard-card__content--offline :deep(*){cursor:not-allowed!important}
+.dashboard-card__content--offline :deep(.v-slider-thumb){pointer-events:none}
+
 .dashboard-board--editing{padding:16px;border:1px solid rgba(var(--v-theme-primary),.22);border-radius:18px;background-color:rgba(var(--v-theme-primary),.012);background-image:linear-gradient(rgba(var(--v-theme-primary),.04) 1px,transparent 1px),linear-gradient(90deg,rgba(var(--v-theme-primary),.04) 1px,transparent 1px);background-size:24px 24px}
 .dashboard-column--editing{gap:0;padding:0 5px 14px;border-radius:12px;outline:1px dashed rgba(var(--v-theme-primary),.12);outline-offset:-1px}
 .dashboard-card--editing{border-color:rgba(var(--v-theme-primary),.4);cursor:grab;box-shadow:0 0 0 1px rgba(var(--v-theme-primary),.08)}
