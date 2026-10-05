@@ -30,6 +30,12 @@
         :title="t('nav.instances')"
         value="instances"
       />
+      <v-list-item
+        to="/kofi"
+        prepend-icon="mdi-coffee-outline"
+        :title="t('nav.kofi')"
+        value="kofi"
+      />
     </v-list>
 
     <template #append>

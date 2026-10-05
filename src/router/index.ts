@@ -4,6 +4,7 @@ import Login from '@/pages/Login.vue'
 import Instances from '@/pages/Instances.vue'
 import Instance from '@/pages/Instance.vue'
 import Settings from '@/pages/Settings.vue'
+import Kofi from '@/pages/Kofi.vue'
 import { useAppStore } from '@/stores/app'
 
 const router = createRouter({
@@ -13,6 +14,7 @@ const router = createRouter({
     { path: '/', name: 'dashboard', component: Dashboard },
     { path: '/instances', name: 'instances', component: Instances },
     { path: '/instances/:id', name: 'instance', component: Instance },
+    { path: '/kofi', name: 'kofi', component: Kofi },
     { path: '/settings', name: 'settings', component: Settings },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

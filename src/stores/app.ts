@@ -21,6 +21,14 @@ export type UserSettings = {
   dashboard_layouts?: Record<string, DashboardLayoutSettings>
 }
 
+export type KofiSettings = {
+  streamer_id: string
+  webhook_url?: string
+  relay_urls: string[]
+  verification_token_configured?: boolean
+  [key: string]: any
+}
+
 export const dashboardSections: DashboardSectionName[] = [
   'music', 'giveaway', 'interactions', 'auto_macros', 'macros',
   'channel_points', 'rotating_scene', 'audio', 'obs', 'yolobox',
@@ -299,6 +307,7 @@ export const useAppStore = defineStore('app', {
     moderators: [] as any[],
     dashboards: {} as Record<string, DashboardSnapshot>,
     userSettings: null as UserSettings | null,
+    kofiSettings: {} as Record<string, KofiSettings>,
     registration: null as StreamDingRegistration | null,
     registrationNotice: null as 'completed' | 'expired' | 'failed' | null,
     userSocketConnected: false,
@@ -386,6 +395,47 @@ export const useAppStore = defineStore('app', {
         this.me = this.me ? { ...this.me, language: updated.language } : this.me
         applyPreferredLocale(this.me)
       }
+      return updated
+    },
+
+    async saveKofiSettings(streamerId: string | number, verificationToken: string, relayUrls: string[]) {
+      const key = String(streamerId).trim()
+      if (!key) throw new Error('streamer_id is required')
+
+      await this.waitForUserSocket()
+      const response = waitForSocketMessage(message => {
+        const type = eventType(message)
+        if (type === 'notify_error') return true
+        if (type !== 'notify_kofi_settings_update') return false
+        const payload = messagePayload(message)
+        const responseId = firstNonEmptyString(
+          payload?.streamer_id, payload?.streamerId, payload?.settings?.streamer_id, payload?.settings?.streamerId,
+          payload?.kofi?.streamer_id, payload?.kofi?.streamerId, payload?.data?.streamer_id, payload?.data?.streamerId,
+        )
+        return !responseId || responseId === key
+      })
+
+      socketSend({
+        type: 'save_kofi_settings',
+        streamer_id: key,
+        verification_token: verificationToken,
+        relay_urls: relayUrls,
+      })
+
+      const message = await response
+      if (eventType(message) === 'notify_error') {
+        const payload = messagePayload(message)
+        throw new Error(String(payload?.error ?? payload?.message ?? 'Could not save Ko-fi settings'))
+      }
+
+      const payload = messagePayload(message)
+      const raw = payload?.settings ?? payload?.kofi ?? payload?.data ?? payload
+      const updated: KofiSettings = {
+        ...(raw && typeof raw === 'object' ? raw : {}),
+        streamer_id: firstNonEmptyString(raw?.streamer_id, raw?.streamerId, payload?.streamer_id, payload?.streamerId, key) || key,
+        relay_urls: Array.isArray(raw?.relay_urls ?? raw?.relayUrls) ? (raw?.relay_urls ?? raw?.relayUrls).map((value: any) => String(value)) : relayUrls,
+      }
+      this.kofiSettings[updated.streamer_id] = updated
       return updated
     },
 
@@ -681,6 +731,21 @@ export const useAppStore = defineStore('app', {
             if (settings?.language) {
               this.me = this.me ? { ...this.me, language: settings.language } : this.me
               applyPreferredLocale(this.me)
+            }
+            return
+          }
+
+          if (type === 'notify_kofi_settings_update') {
+            const raw = payload?.settings ?? payload?.kofi ?? payload?.data ?? payload
+            const streamerId = firstNonEmptyString(
+              raw?.streamer_id, raw?.streamerId, payload?.streamer_id, payload?.streamerId,
+            )
+            if (!streamerId) return
+            const relayUrls = raw?.relay_urls ?? raw?.relayUrls ?? []
+            this.kofiSettings[streamerId] = {
+              ...(raw && typeof raw === 'object' ? raw : {}),
+              streamer_id: streamerId,
+              relay_urls: Array.isArray(relayUrls) ? relayUrls.map((value: any) => String(value)) : [],
             }
             return
           }
