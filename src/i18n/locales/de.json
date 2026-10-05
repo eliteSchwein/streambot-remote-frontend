@@ -186,7 +186,9 @@
     "kofiRelayHint": "Optionale HTTPS-Webhook-Ziele, eine URL pro Zeile.",
     "kofiRelayLimit": "Bis zu 10 öffentliche HTTPS-Relay-URLs.",
     "kofiSaved": "Ko-fi-Einstellungen gespeichert.",
-    "kofiSaveError": "Ko-fi-Einstellungen konnten nicht gespeichert werden."
+    "kofiSaveError": "Ko-fi-Einstellungen konnten nicht gespeichert werden.",
+    "kofiManageHint": "Richte den Webhook in deinem Ko-fi-Account unter „Webhooks verwalten“ ein.",
+    "kofiManageOpen": "Ko-fi-Webhooks öffnen"
   },
   "errors": {
     "backend": "Verbindung zum Remote-Admin-Backend konnte nicht hergestellt werden."

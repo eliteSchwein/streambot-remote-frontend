@@ -35,6 +35,27 @@
                 {{ t('settings.kofiWebhookHint') }}
               </div>
 
+              <v-alert
+                type="info"
+                variant="tonal"
+                density="compact"
+                class="mb-4"
+              >
+                <div class="d-flex align-center justify-space-between ga-3 flex-wrap">
+                  <span>{{ t('settings.kofiManageHint') }}</span>
+                  <v-btn
+                    href="https://ko-fi.com/manage/webhooks"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    variant="text"
+                    size="small"
+                    append-icon="mdi-open-in-new"
+                  >
+                    {{ t('settings.kofiManageOpen') }}
+                  </v-btn>
+                </div>
+              </v-alert>
+
               <div class="kofi-webhook-row">
                 <v-text-field
                   :model-value="kofiWebhookUrl"
