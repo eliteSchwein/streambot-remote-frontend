@@ -291,38 +291,3 @@ async function copyWebhookUrl() {
 }
 </script>
 
-<style scoped>
-.kofi-card {
-  max-width: 980px;
-}
-
-.kofi-webhook-card {
-  background: rgba(var(--v-theme-surface), 0.42);
-}
-
-.kofi-webhook-row {
-  display: flex;
-  align-items: stretch;
-  gap: 12px;
-}
-
-.kofi-webhook-field {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.kofi-copy-btn {
-  min-width: 112px;
-  align-self: center;
-}
-
-@media (max-width: 700px) {
-  .kofi-webhook-row {
-    flex-direction: column;
-  }
-
-  .kofi-copy-btn {
-    width: 100%;
-  }
-}
-</style>

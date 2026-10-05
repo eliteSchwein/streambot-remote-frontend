@@ -134,7 +134,10 @@
     "resetDashboard": "Layout zurücksetzen",
     "obsScenes": "OBS-Szenen",
     "obsAudioMixer": "OBS-Audiomixer",
-    "obsSwitchTo": "Wechseln zu"
+    "obsSwitchTo": "Wechseln zu",
+    "noObsAudioInputs": "Keine OBS-Audioeingänge verfügbar.",
+    "noObsScenes": "Für diese OBS-Verbindung sind keine Szenen verfügbar.",
+    "noSceneItems": "Keine Szenenelemente."
   },
   "sections": {
     "music": "Musik",

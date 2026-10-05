@@ -103,244 +103,62 @@
               :aria-disabled="!online ? 'true' : undefined"
             >
               <template v-if="section.key === 'music'">
-                <div class="music-card">
-                  <div class="music-meta">
-                    <div class="music-art">
-                      <v-img v-if="music.thumbnail" :src="music.thumbnail" cover />
-                      <v-icon v-else size="42">mdi-music-note</v-icon>
-                    </div>
-                    <div class="min-w-0 flex-grow-1">
-                      <div class="text-h6 text-truncate">{{ music.title || t('instance.noTrack') }}</div>
-                      <div class="text-body-2 text-medium-emphasis text-truncate">{{ [music.artist, music.album].filter(Boolean).join(' · ') }}</div>
-                    </div>
-                  </div>
-
-                  <div class="music-progress mt-5">
-                    <v-slider :model-value="musicProgress" min="0" max="100" step="0.1" hide-details readonly class="music-progress-slider" />
-                    <div class="d-flex justify-space-between text-caption text-medium-emphasis mt-n1">
-                      <span>{{ formatDuration(music.position ?? music.progress) }}</span>
-                      <span>{{ formatDuration(music.duration) }}</span>
-                    </div>
-                  </div>
-
-                  <div class="music-controls mt-4">
-                    <v-btn icon="mdi-shuffle" size="small" :variant="music.shuffle ? 'flat' : 'text'" :color="music.shuffle ? 'primary' : undefined" @click="command('music.shuffle',{},'music')" />
-                    <v-btn icon="mdi-skip-previous" size="large" variant="text" @click="command('music.prev',{},'music')" />
-                    <v-btn :icon="music.status === 'playing' ? 'mdi-pause' : 'mdi-play'" size="x-large" color="primary" variant="flat" class="music-play" @click="command(music.status === 'playing' ? 'music.pause' : 'music.play',{},'music')" />
-                    <v-btn icon="mdi-skip-next" size="large" variant="text" @click="command('music.next',{},'music')" />
-                    <v-btn icon="mdi-repeat" size="small" :variant="music.loop ? 'flat' : 'text'" :color="music.loop ? 'primary' : undefined" @click="command('music.loop',{},'music')" />
-                  </div>
-
-                  <div class="music-volume mt-5">
-                    <v-icon size="small">mdi-volume-medium</v-icon>
-                    <v-slider :model-value="Number(music.volume ?? 0)" min="0" max="100" step="1" hide-details thumb-label @end="(v:any)=>command('music.volume',{volume:Number(v)},'music')" />
-                    <span class="text-caption text-medium-emphasis">{{ Math.round(Number(music.volume ?? 0)) }}%</span>
-                  </div>
-
-                  <div class="music-stats mt-4">
-                    <span>{{ t('instance.playlistTracks', { count: Number(music.playlist_length ?? 0) }) }}</span>
-                    <span>{{ t('instance.songRequests') }}: {{ music.songrequest?.enabled ? t('common.yes') : t('common.no') }}</span>
-                    <span>{{ t('instance.queue') }}: {{ Number(music.songrequest?.queue_length ?? music.songrequest?.queue?.length ?? 0) }}</span>
-                  </div>
-                </div>
+                <MusicCard :music="music" @command="(method,params)=>command(method,params,'music')" />
               </template>
 
               <template v-else-if="section.key === 'giveaway'">
-                <v-row>
-                  <v-col cols="12" md="4">
-                    <v-card variant="tonal" rounded="lg">
-                      <v-card-text>
-                        <div class="text-overline">{{ t('instance.status') }}</div>
-                        <div class="text-h5">{{ giveaway.active ? t('instance.active') : t('instance.inactive') }}</div>
-                      </v-card-text>
-                    </v-card>
-                  </v-col>
-                  <v-col cols="12" md="4">
-                    <v-card variant="tonal" rounded="lg"><v-card-text><div class="text-overline">{{ t('instance.entries') }}</div><div class="text-h5">{{ giveaway.users?.length ?? 0 }}</div></v-card-text></v-card>
-                  </v-col>
-                  <v-col cols="12" md="4">
-                    <v-card variant="tonal" rounded="lg"><v-card-text><div class="text-overline">{{ t('instance.command') }}</div><div class="text-h5">!{{ giveaway.settings?.giveawayCommand ?? 'ticket' }}</div></v-card-text></v-card>
-                  </v-col>
-                </v-row>
-                <div class="mt-4 text-body-1">{{ giveaway.giveawayText || t('instance.noGiveaway') }}</div>
+                <GiveawayCard :giveaway="giveaway" />
               </template>
 
               <template v-else-if="section.key === 'interactions'">
-                <div v-if="interactionItems.length" class="interaction-list">
-                  <div
-                    v-for="item in interactionItems"
-                    :key="itemKey(item)"
-                    class="interaction-item"
-                    :class="`interaction-item--${interactionState(item)}`"
-                  >
-                    <div class="interaction-item__icon">
-                      <v-icon :icon="interactionSourceIcon(item)" size="22" />
-                    </div>
-
-                    <div class="interaction-item__body">
-                      <div class="interaction-item__headline">
-                        <span class="font-weight-bold">{{ interactionDisplayName(item) }}</span>
-                        <v-chip
-                          v-if="interactionState(item) !== 'active'"
-                          size="x-small"
-                          variant="tonal"
-                          :color="interactionStateColor(item)"
-                          :prepend-icon="interactionStateIcon(item)"
-                        >
-                          {{ interactionStateLabel(item) }}
-                        </v-chip>
-                      </div>
-
-                      <div class="interaction-item__meta">
-                        <span>
-                          <v-icon :icon="interactionSourceIcon(item)" size="16" />
-                          {{ interactionSourceLabel(item) }}
-                        </span>
-                        <span v-if="Number(item.duration ?? 0) > 0">
-                          <v-icon icon="mdi-timer-outline" size="16" />
-                          {{ t('instance.interactionDuration',{duration:formatSeconds(item.duration)}) }}
-                        </span>
-                        <span v-if="Number(item.eta_seconds ?? 0) > 0">
-                          <v-icon icon="mdi-clock-fast" size="16" />
-                          {{ t('instance.interactionEta',{duration:formatSeconds(item.eta_seconds)}) }}
-                        </span>
-                        <span v-else-if="interactionState(item) === 'active'">
-                          <v-icon icon="mdi-progress-clock" size="16" />
-                          {{ t('instance.interactionPleaseWait') }}
-                        </span>
-                        <span v-if="Number(item.alert_count ?? 0) > 0">
-                          <v-icon icon="mdi-bell-outline" size="16" />
-                          {{ t('instance.interactionAlerts',{count:Number(item.alert_count)}) }}
-                        </span>
-                      </div>
-
-                      <v-progress-linear
-                        v-if="interactionState(item) === 'active' && Number(item.duration ?? 0) > 0"
-                        class="interaction-item__progress"
-                        :model-value="interactionProgress(item)"
-                        color="white"
-                        bg-color="rgba(255,255,255,.22)"
-                        rounded
-                        height="4"
-                      />
-
-                      <div v-if="item.error" class="interaction-item__error">
-                        <v-icon icon="mdi-alert-circle-outline" size="16" />
-                        {{ item.error }}
-                      </div>
-                    </div>
-
-                    <v-btn
-                      class="interaction-item__remove"
-                      icon="mdi-close"
-                      :variant="interactionState(item) === 'active' ? 'tonal' : 'text'"
-                      :color="interactionState(item) === 'active' ? 'white' : 'error'"
-                      size="small"
-                      :title="t('instance.interactionCancel')"
-                      @click.stop="command('interaction.remove',{uuid:item.uuid ?? item.id},'interactions')"
-                    />
-                  </div>
-                </div>
-                <div v-else class="interaction-empty">
-                  <v-icon icon="mdi-check-circle-outline" size="22" />
-                  <span>{{ t('instance.noInteractions') }}</span>
-                </div>
+                <InteractionsCard :items="interactionItems" @command="(method,params)=>command(method,params,'interactions')" />
               </template>
 
               <template v-else-if="section.key === 'auto_macros'">
-                <v-list v-if="autoMacroItems.length" bg-color="transparent" class="auto-macro-list">
-                  <v-list-item v-for="item in autoMacroItems" :key="itemKey(item)" class="auto-macro-item">
-                    <div v-if="item.enabled" class="auto-macro-item__progress" :style="{ width: `${autoMacroProgress(item)}%` }"></div>
-                    <div class="auto-macro-item__content">
-                      <div class="d-flex align-center ga-3 flex-grow-1 min-w-0">
-                        <v-icon :color="item.enabled ? 'success' : undefined">{{ item.enabled ? 'mdi-robot' : 'mdi-robot-off-outline' }}</v-icon>
-                        <div class="min-w-0">
-                          <div class="font-weight-medium text-truncate">{{ itemLabel(item) }}</div>
-                          <div class="text-caption text-medium-emphasis">
-                            {{ item.enabled ? t('instance.nextTriggerIn',{time:formatSeconds(item.current_interval ?? 0)}) : t('instance.intervalSeconds',{count:Number(item.interval ?? 0)}) }}
-                          </div>
-                        </div>
-                      </div>
-                      <v-switch class="auto-macro-switch" color="primary" hide-details density="compact" :model-value="Boolean(item.enabled)" @update:model-value="(enabled)=>command('auto_macro.toggle',{name:item.name ?? item.id,enable:Boolean(enabled)},'auto_macros')" />
-                    </div>
-                  </v-list-item>
-                </v-list>
-                <div v-else class="empty-state">{{ t('instance.emptySection') }}</div>
+                <AutoMacrosCard :items="autoMacroItems" @command="(method,params)=>command(method,params,'auto_macros')" />
               </template>
 
               <template v-else-if="section.key === 'macros'">
-                <div v-if="filteredMacroItems(section).length" class="macro-grid">
-                  <button
-                    v-for="item in filteredMacroItems(section)"
-                    :key="itemKey(item)"
-                    type="button"
-                    class="macro-tile"
-                    :title="itemLabel(item)"
-                    @click="command('macro.run',{macro:item.name ?? item.id},'macros')"
-                  >
-                    <span class="macro-tile__icon"><v-icon size="18">mdi-play</v-icon></span>
-                    <span class="macro-tile__label">{{ itemLabel(item) }}</span>
-                    <v-icon class="macro-tile__launch" size="16">mdi-chevron-right</v-icon>
-                  </button>
-                </div>
-                <div v-else class="empty-state">{{ editLayout ? t('instance.chooseMacros') : t('instance.emptySection') }}</div>
+                <MacrosCard :items="filteredMacroItems(section)" :edit-layout="editLayout" @command="(method,params)=>command(method,params,'macros')" />
               </template>
 
               <template v-else-if="section.key === 'channel_points'">
-                <div v-if="channelPointItems.length" class="channel-point-grid">
-                  <v-card v-for="item in channelPointItems" :key="itemKey(item)" variant="tonal" rounded="lg">
-                    <v-card-text class="d-flex align-center ga-3">
-                      <v-avatar rounded="lg" size="48" :color="item.background || undefined">
-                        <v-img v-if="item.image" :src="item.image" cover />
-                        <v-icon v-else>mdi-star-circle-outline</v-icon>
-                      </v-avatar>
-                      <div class="min-w-0 flex-grow-1">
-                        <div class="font-weight-medium text-truncate">{{ itemLabel(item) }}</div>
-                        <div class="text-caption text-medium-emphasis">{{ item.exists_on_twitch ? 'Twitch' : t('instance.localOnly') }}</div>
-                      </div>
-                      <v-switch color="primary" hide-details density="compact" :model-value="Boolean(item.active ?? item.twitch_enabled)" @update:model-value="()=>command('channel_point.toggle',{state:'toggle',channel_point:item},'channel_points')" />
-                    </v-card-text>
-                  </v-card>
-                </div>
-                <div v-else class="empty-state">{{ t('instance.emptySection') }}</div>
+                <ChannelPointsCard :items="channelPointItems" @command="(method,params)=>command(method,params,'channel_points')" />
               </template>
 
               <template v-else-if="section.key === 'rotating_scene'">
-                <div class="d-flex align-center ga-2 mb-4">
-                  <v-chip variant="tonal" :color="rotatingScene.runtime?.active ? 'success' : undefined">{{ rotatingScene.runtime?.active ? t('instance.active') : t('instance.inactive') }}</v-chip>
-                  <v-btn v-if="rotatingScene.runtime?.active" prepend-icon="mdi-stop" color="error" variant="tonal" @click="command('rotating_scene.stop',{},'rotating_scene')">Stop</v-btn>
-                </div>
-                <div v-if="rotatingSceneItems.length" class="action-grid">
-                  <v-btn v-for="item in rotatingSceneItems" :key="itemKey(item)" variant="tonal" prepend-icon="mdi-play" @click="command('rotating_scene.start',{name:item.name ?? item.id},'rotating_scene')">{{ itemLabel(item) }}</v-btn>
-                </div>
-                <div v-else class="empty-state">{{ t('instance.noRotatingScenes') }}</div>
+                <RotatingSceneCard :rotating-scene="rotatingScene" :items="rotatingSceneItems" @command="(method,params)=>command(method,params,'rotating_scene')" />
               </template>
 
               <template v-else-if="section.key === 'audio'">
-                <RemoteAudioControl :audio="sectionData('audio') ?? {}" @command="(method,params)=>command(method,params,'audio')" @method="(method,params)=>nativeMethod(method,params,'audio')" />
+                <AudioCard :audio="sectionData('audio') ?? {}" @command="(method,params)=>command(method,params,'audio')" @method="(method,params)=>nativeMethod(method,params,'audio')" />
               </template>
 
               <template v-else-if="section.key === 'obs'">
-                <v-select
-                  v-if="editLayout"
-                  class="mb-4"
-                  :model-value="obsConnectionFor(section)"
-                  :items="obsConnectionOptions(section)"
-                  :label="t('instance.obsConnection')"
-                  prepend-inner-icon="mdi-connection"
-                  variant="outlined" density="comfortable" hide-details
-                  @update:model-value="(value)=>setObsConnection(section, String(value ?? ''))"
+                <ObsAudioMixerCard
+                  v-if="obsPanelFor(section) === 'audio'"
+                  :obs="sectionData('obs') ?? {}"
+                  :connection="obsConnectionFor(section)"
+                  :connection-options="obsConnectionOptions(section)"
+                  :edit-layout="editLayout"
+                  @update:connection="(value)=>setObsConnection(section, value)"
+                  @command="(method,params)=>command(method,params,'obs')"
                 />
-                <RemoteObsControl :obs="sectionData('obs') ?? {}" :connection="obsConnectionFor(section)" :mode="obsPanelFor(section)" @command="(method,params)=>command(method,params,'obs')" />
+                <ObsScenesCard
+                  v-else
+                  :obs="sectionData('obs') ?? {}"
+                  :connection="obsConnectionFor(section)"
+                  :connection-options="obsConnectionOptions(section)"
+                  :edit-layout="editLayout"
+                  @update:connection="(value)=>setObsConnection(section, value)"
+                  @command="(method,params)=>command(method,params,'obs')"
+                />
               </template>
 
               <template v-else-if="section.key === 'yolobox'">
-                <div class="d-flex flex-wrap ga-2 mb-4">
-                  <v-chip variant="tonal" :color="yolobox.connection ? 'success' : undefined">{{ yolobox.connection ? t('common.online') : t('common.offline') }}</v-chip>
-                  <v-chip v-if="yolobox.ip" variant="tonal">{{ yolobox.ip }}</v-chip>
-                </div>
-                <RemoteYoloboxControl :yolobox="yolobox" @command="(method,params)=>command(method,params,'yolobox')" />
+                <YoloboxCard :yolobox="yolobox" @command="(method,params)=>command(method,params,'yolobox')" />
               </template>
+
             </v-card-text>
             </v-card>
           </template>
@@ -422,26 +240,27 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import PageShell from '@/components/PageShell.vue'
-import RemoteObsControl from '@/components/remote/RemoteObsControl.vue'
-import RemoteAudioControl from '@/components/remote/RemoteAudioControl.vue'
-import RemoteYoloboxControl from '@/components/remote/RemoteYoloboxControl.vue'
+import ObsScenesCard from '@/components/dashboard/ObsScenesCard.vue'
+import ObsAudioMixerCard from '@/components/dashboard/ObsAudioMixerCard.vue'
+import MusicCard from '@/components/dashboard/MusicCard.vue'
+import GiveawayCard from '@/components/dashboard/GiveawayCard.vue'
+import InteractionsCard from '@/components/dashboard/InteractionsCard.vue'
+import AutoMacrosCard from '@/components/dashboard/AutoMacrosCard.vue'
+import MacrosCard from '@/components/dashboard/MacrosCard.vue'
+import ChannelPointsCard from '@/components/dashboard/ChannelPointsCard.vue'
+import RotatingSceneCard from '@/components/dashboard/RotatingSceneCard.vue'
+import AudioCard from '@/components/dashboard/AudioCard.vue'
+import YoloboxCard from '@/components/dashboard/YoloboxCard.vue'
 import { dashboardSections, instanceKey, type DashboardLayoutItem, type DashboardSectionName, useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n'
-
-const StateView = defineComponent({
-  props: { value: { type: null, required: false } },
-  setup(props) { return () => h('pre', { class: 'state-view' }, JSON.stringify(props.value ?? {}, null, 2)) },
-})
 
 const route = useRoute()
 const store = useAppStore()
 const { t } = useI18n()
 const id = computed(() => String(route.params.id ?? ''))
-const sectionLoading = ref<DashboardSectionName | null>(null)
-const previewFailed = ref(false)
 
 const instance = computed(() => store.instances.find((v:any) => instanceKey(v) === id.value))
 const dashboard = computed<any>(() => store.dashboards[id.value] ?? {})
@@ -486,18 +305,6 @@ const dashboardColumns = computed(() => {
 const hiddenSections = computed(() => dashboardLayout.value.filter(section => section.key !== 'obs' && !section.visible))
 const instanceName = computed(() => instance.value?.name ?? instance.value?.hostname ?? instance.value?.display_name ?? `${t('common.instance')} ${id.value}`)
 const online = computed(() => Boolean(instance.value?.online ?? instance.value?.connected ?? instance.value?.is_connected))
-const previewUrl = computed(() => {
-  const value = yolobox.value?.preview ?? yolobox.value?.preview_url ?? yolobox.value?.previewUrl ?? ''
-  if (typeof value === 'string') return value
-  if (value?.data_url) return value.data_url
-  if (value?.url) return value.url
-  if (value?.base64) {
-    const mime = value.mime_type ?? value.mime ?? 'image/jpeg'
-    return `data:${mime};base64,${value.base64}`
-  }
-  return ''
-})
-
 const music = computed<any>(() => sectionData('music') ?? {})
 const giveaway = computed<any>(() => sectionData('giveaway') ?? {})
 const interactionItems = computed(() => toArray(sectionData('interactions')))
@@ -517,8 +324,6 @@ const channelPointItems = computed(() => {
 })
 const rotatingScene = computed<any>(() => sectionData('rotating_scene') ?? {})
 const rotatingSceneItems = computed(() => objectValues(rotatingScene.value?.items))
-const audioInterfaces = computed(() => Object.entries(sectionData('audio')?.data ?? {}).map(([name, data]) => ({ name, data: data as any })))
-const audioOutputs = computed(() => toArray(sectionData('audio')?.outputs))
 const obsConnections = computed(() => {
   const obs = sectionData('obs') ?? {}
   const names = Array.from(new Set<string>([...(obs.connection_names ?? []), ...Object.keys(obs.scenes ?? {}), ...Object.keys(obs.audio ?? {})]))
@@ -542,73 +347,10 @@ const addableObsCards = computed(() => {
   ])).filter(card => !visible.has(`${card.connection}:${card.panel}`))
 })
 const yolobox = computed<any>(() => sectionData('yolobox') ?? {})
-const musicProgress = computed(() => {
-  const direct = Number(music.value?.progress_percentage)
-  if (Number.isFinite(direct)) return Math.max(0, Math.min(100, direct))
-  const pos = Number(music.value?.position ?? music.value?.progress)
-  const duration = Number(music.value?.duration)
-  return duration > 0 ? Math.max(0, Math.min(100, pos / duration * 100)) : 0
-})
-
 function sectionData(section: DashboardSectionName){ return dashboard.value?.[section] }
 function toArray(value:any):any[]{ return Array.isArray(value) ? value : [] }
 function objectValues(value:any):any[]{ return value && typeof value === 'object' && !Array.isArray(value) ? Object.entries(value).map(([key, entry]:any) => ({ id:key, ...(entry ?? {}) })) : toArray(value) }
-function itemKey(item:any){ return String(item?.id ?? item?.uuid ?? item?.name ?? item?.label ?? JSON.stringify(item)) }
 function itemLabel(item:any){ return String(item?.label ?? item?.name ?? item?.title ?? item?.display_name ?? item?.sceneName ?? item?.id ?? t('common.item')) }
-function formatDuration(value:any){ const ms=Number(value); if(!Number.isFinite(ms) || ms < 0) return '0:00'; const total=Math.floor(ms/1000); return `${Math.floor(total/60)}:${String(total%60).padStart(2,'0')}` }
-function formatSeconds(value:any){ const total=Math.max(0,Math.round(Number(value)||0)); const h=Math.floor(total/3600); const m=Math.floor((total%3600)/60); const sec=total%60; if(h) return `${h}h ${m}m`; if(m) return `${m}m ${sec}s`; return `${sec}s` }
-function autoMacroProgress(item:any){ const interval=Number(item?.interval ?? 0); const current=Number(item?.current_interval ?? 0); return interval>0 ? Math.max(0,Math.min(100,(100/interval)*current)) : 0 }
-
-function interactionState(item:any): string {
-  return String(item?.state ?? item?.status ?? 'queued').toLowerCase()
-}
-function interactionSource(item:any): string {
-  return String(item?.source ?? item?.type ?? 'other').toLowerCase()
-}
-function interactionDisplayName(item:any): string {
-  const name = itemLabel(item).trim()
-  const source = interactionSource(item)
-  const prefixes:Record<string,string> = {
-    channel_point: String(t('instance.interactionChannelPoint')),
-    command: String(t('instance.interactionCommand')),
-    event: String(t('instance.interactionEvent')),
-  }
-  const prefix = prefixes[source]
-  if (!prefix) return name
-  const normalized = name.toLowerCase()
-  if (normalized.startsWith(`${prefix.toLowerCase()}:`)) return name
-  return `${prefix}: ${name}`
-}
-function interactionSourceIcon(item:any): string {
-  const icons:Record<string,string> = { command:'mdi-console-line', event:'mdi-lightning-bolt', channel_point:'mdi-star-circle', api:'mdi-api', other:'mdi-play-circle-outline' }
-  return icons[interactionSource(item)] ?? icons.other
-}
-function interactionStateIcon(item:any): string {
-  const icons:Record<string,string> = { queued:'mdi-clock-outline', active:'mdi-play-circle', finished:'mdi-check-circle', cancelled:'mdi-cancel', failed:'mdi-alert-circle' }
-  return icons[interactionState(item)] ?? 'mdi-help-circle-outline'
-}
-function interactionStateColor(item:any): string {
-  const state=interactionState(item)
-  if (state === 'active' || state === 'finished') return 'success'
-  if (state === 'failed') return 'error'
-  if (state === 'cancelled') return 'warning'
-  return 'grey'
-}
-function interactionStateLabel(item:any): string {
-  const labels:Record<string,string> = { queued:t('instance.interactionQueued'), active:t('instance.interactionActive'), finished:t('instance.interactionFinished'), cancelled:t('instance.interactionCancelled'), failed:t('instance.interactionFailed') }
-  return labels[interactionState(item)] ?? interactionState(item)
-}
-function interactionSourceLabel(item:any): string {
-  const labels:Record<string,string> = { command:t('instance.interactionCommand'), event:t('instance.interactionEvent'), channel_point:t('instance.interactionChannelPoint'), api:'API', other:t('instance.interactionOther') }
-  return labels[interactionSource(item)] ?? labels.other
-}
-function interactionProgress(item:any): number {
-  const duration=Number(item?.duration ?? 0)
-  const eta=Number(item?.eta_seconds ?? 0)
-  if (interactionState(item) !== 'active' || duration <= 0) return 0
-  return Math.max(0,Math.min(100,((duration-eta)/duration)*100))
-}
-
 function uniqueCardId(base:string, used:Set<string>): string {
   let id = base || 'card'
   let suffix = 2
@@ -959,83 +701,3 @@ onBeforeUnmount(() => {
 })
 </script>
 
-<style scoped>
-.action-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
-.macro-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
-.macro-tile{appearance:none;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.055);color:inherit;border-radius:10px;min-width:0;min-height:46px;padding:7px 10px 7px 8px;display:grid;grid-template-columns:30px minmax(0,1fr) 18px;align-items:center;gap:8px;text-align:left;cursor:pointer;transition:background .14s ease,border-color .14s ease,transform .08s ease}
-.macro-tile:hover{background:rgba(var(--v-theme-primary),.10);border-color:rgba(var(--v-theme-primary),.28)}
-.macro-tile:active{transform:translateY(1px)}
-.macro-tile:focus-visible{outline:2px solid rgb(var(--v-theme-primary));outline-offset:2px}
-.macro-tile__icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(var(--v-theme-primary),.12);color:rgb(var(--v-theme-primary))}
-.macro-tile__label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.88rem;font-weight:500}
-.macro-tile__launch{opacity:.38;transition:opacity .14s ease,transform .14s ease}
-.macro-tile:hover .macro-tile__launch{opacity:.85;transform:translateX(2px)}
-@media (min-width:1500px){.macro-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}}
-.channel-point-grid,.audio-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-.state-view{margin:0;padding:14px;border-radius:10px;background:rgba(255,255,255,.035);overflow:auto;max-height:430px;font-size:.8rem;line-height:1.45}
-.preview{background:#090909}
-.empty-state{padding:28px;text-align:center;opacity:.65}
-
-
-.interaction-list{display:flex;flex-direction:column;gap:9px}
-.interaction-item{display:flex;align-items:center;gap:14px;min-height:76px;padding:14px 14px 14px 16px;border-radius:8px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.075);color:rgba(255,255,255,.94);overflow:hidden;position:relative;transition:background .15s ease,border-color .15s ease}
-.interaction-item--queued{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.09)}
-.interaction-item--active{background:rgb(46,125,50);border-color:rgba(255,255,255,.08);color:#fff}
-.interaction-item--finished{background:rgba(46,125,50,.10);border-color:rgba(76,175,80,.25)}
-.interaction-item--failed{background:rgba(var(--v-theme-error),.08);border-color:rgba(var(--v-theme-error),.28)}
-.interaction-item--cancelled{background:rgba(var(--v-theme-warning),.07);border-color:rgba(var(--v-theme-warning),.24)}
-.interaction-item__icon{display:flex;align-items:center;justify-content:center;width:40px;height:40px;flex:0 0 40px;border-radius:50%;background:rgba(255,255,255,.075);color:rgba(255,255,255,.88)}
-.interaction-item--active .interaction-item__icon{background:rgba(0,0,0,.18);color:#fff}
-.interaction-item--failed .interaction-item__icon{color:rgb(var(--v-theme-error));background:rgba(var(--v-theme-error),.10)}
-.interaction-item--cancelled .interaction-item__icon{color:rgb(var(--v-theme-warning));background:rgba(var(--v-theme-warning),.10)}
-.interaction-item__body{min-width:0;flex:1}
-.interaction-item__headline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;line-height:1.25}
-.interaction-item__meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 14px;margin-top:5px;font-size:.82rem;color:rgba(255,255,255,.58)}
-.interaction-item--active .interaction-item__meta{color:rgba(255,255,255,.82)}
-.interaction-item__meta>span{display:inline-flex;align-items:center;gap:4px}
-.interaction-item__progress{margin-top:9px}
-.interaction-item__error{display:flex;align-items:center;gap:5px;margin-top:7px;font-size:.8rem;color:rgb(var(--v-theme-error))}
-.interaction-item--active .interaction-item__error{color:#fff}
-.interaction-item__remove{flex:0 0 auto;opacity:.8}
-.interaction-item__remove:hover{opacity:1}
-.interaction-empty{display:flex;align-items:center;gap:10px;padding:20px;border-radius:8px;background:rgba(255,255,255,.035);border:1px dashed rgba(255,255,255,.08);color:rgba(255,255,255,.55)}
-
-/* One layout engine in both normal and edit mode: persistent column stacks. */
-.dashboard-board{display:grid;grid-template-columns:repeat(var(--dashboard-columns,1),minmax(0,1fr));gap:24px;align-items:start;width:100%;max-width:none}
-.dashboard-column{display:flex;flex-direction:column;gap:22px;min-width:0;min-height:72px}
-.dashboard-card{width:100%;min-width:0;overflow:hidden;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.028);transition:border-color .16s ease,transform .16s ease,box-shadow .16s ease,opacity .16s ease}
-.dashboard-card__title{display:flex;align-items:center;gap:10px;min-height:58px;border-bottom:1px solid rgba(255,255,255,.055)}
-.dashboard-card__content--offline{opacity:.52;filter:saturate(.55);cursor:not-allowed;user-select:none}
-.dashboard-card__content--offline :deep(*){cursor:not-allowed!important}
-.dashboard-card__content--offline :deep(.v-slider-thumb){pointer-events:none}
-
-.dashboard-board--editing{padding:16px;border:1px solid rgba(var(--v-theme-primary),.22);border-radius:18px;background-color:rgba(var(--v-theme-primary),.012);background-image:linear-gradient(rgba(var(--v-theme-primary),.04) 1px,transparent 1px),linear-gradient(90deg,rgba(var(--v-theme-primary),.04) 1px,transparent 1px);background-size:24px 24px}
-.dashboard-column--editing{gap:0;padding:0 5px 14px;border-radius:12px;outline:1px dashed rgba(var(--v-theme-primary),.12);outline-offset:-1px}
-.dashboard-card--editing{border-color:rgba(var(--v-theme-primary),.4);cursor:grab;box-shadow:0 0 0 1px rgba(var(--v-theme-primary),.08)}
-.dashboard-card--editing:active{cursor:grabbing}
-.dashboard-card--dragging{opacity:.35;transform:scale(.985)}
-.dashboard-drop-slot{height:28px;margin:3px 0;border:1px dashed rgba(var(--v-theme-primary),.12);border-radius:8px;background:rgba(var(--v-theme-primary),.018);transition:height .12s ease,border-color .12s ease,background .12s ease}
-.dashboard-drop-slot--active{height:52px;border-color:rgb(var(--v-theme-primary));background:rgba(var(--v-theme-primary),.13)}
-.dashboard-drop-slot--end{min-height:42px;flex:0 0 auto}
-.dashboard-card__edit-actions{display:flex;align-items:center;gap:2px}
-.dashboard-drag-handle{cursor:grab;opacity:.75}
-.dashboard-edit-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:14px;padding:8px 4px}
-.dashboard-empty{border:1px dashed rgba(255,255,255,.12)}
-.auto-macro-list{padding:0}
-.auto-macro-item{position:relative;overflow:hidden;border-radius:10px;margin:4px 0}
-.auto-macro-item__progress{position:absolute;inset:0 auto 0 0;background:rgba(var(--v-theme-primary),.12);pointer-events:none;transition:width .25s linear}
-.auto-macro-item__content{position:relative;z-index:1;display:flex;align-items:center;gap:12px;width:100%;min-width:0;box-sizing:border-box;padding:6px 8px 6px 0}
-.auto-macro-switch{flex:0 0 auto;margin-right:2px}
-.auto-macro-item :deep(.v-list-item__content){min-width:0;overflow:visible}
-.macro-selector-list{max-height:460px;overflow:auto;border:1px solid rgba(255,255,255,.07);border-radius:12px}
-.music-card{max-width:820px;margin:0 auto;padding:8px 4px 4px}
-.music-meta{display:flex;align-items:center;gap:16px}
-.music-art{width:72px;height:72px;display:flex;align-items:center;justify-content:center;border-radius:16px;overflow:hidden;background:rgba(255,255,255,.06)}
-.music-controls{display:flex;align-items:center;justify-content:center;gap:10px}
-.music-play{width:64px!important;height:64px!important}
-.music-volume{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px}
-.music-stats{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 18px;font-size:.8rem;opacity:.7}
-.music-progress-slider :deep(.v-slider-thumb){display:none}
-.music-progress-slider :deep(.v-slider-track__background){opacity:.2}
-
-</style>

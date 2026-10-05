@@ -134,7 +134,10 @@
     "resetDashboard": "Reset layout",
     "obsScenes": "OBS Scenes",
     "obsAudioMixer": "OBS Audio Mixer",
-    "obsSwitchTo": "Switch to"
+    "obsSwitchTo": "Switch to",
+    "noObsAudioInputs": "No OBS audio inputs available.",
+    "noObsScenes": "No scenes are available for this OBS connection.",
+    "noSceneItems": "No scene items."
   },
   "sections": {
     "music": "Music",

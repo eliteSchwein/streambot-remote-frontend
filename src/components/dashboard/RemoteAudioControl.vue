@@ -67,10 +67,3 @@ function setOutputVolume(out:any, value:number){ const volume=Math.max(0,Math.mi
 function setOutputMute(out:any, muted:boolean){ ;(outputDraft[outputKey(out)] ??= {}).muted=muted; emit('method','set_audio_output_mute',{output:out.name,muted}) }
 </script>
 
-<style scoped>
-.audio-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
-.output-actions{display:grid;grid-template-columns:42px minmax(120px,170px) 36px;align-items:center;gap:8px}
-.output-volume-label{text-align:right;font-variant-numeric:tabular-nums}
-.output-slider{width:100%}
-@media (max-width:700px){.output-actions{grid-template-columns:36px 110px 36px}}
-</style>
