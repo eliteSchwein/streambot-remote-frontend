@@ -131,7 +131,10 @@
     "dragCardsHint": "Drag cards to rearrange them. Remove cards with the × button.",
     "noDashboardCards": "No dashboard cards",
     "noDashboardCardsHint": "Add a card to build this instance dashboard.",
-    "resetDashboard": "Reset layout"
+    "resetDashboard": "Reset layout",
+    "obsScenes": "OBS Scenes",
+    "obsAudioMixer": "OBS Audio Mixer",
+    "obsSwitchTo": "Switch to"
   },
   "sections": {
     "music": "Music",

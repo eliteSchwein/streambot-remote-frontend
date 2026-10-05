@@ -12,7 +12,7 @@
     </template>
 
     <template #actions>
-      <v-menu v-if="hiddenSections.length || addableObsConnections.length">
+      <v-menu v-if="hiddenSections.length || addableObsCards.length">
         <template #activator="{ props }">
           <v-btn v-bind="props" prepend-icon="mdi-plus" variant="text">
             {{ t('instance.addCard') }}
@@ -26,14 +26,14 @@
             :title="t(`sections.${section.key}`)"
             @click="showSection(section.id)"
           />
-          <v-divider v-if="hiddenSections.length && addableObsConnections.length" />
-          <v-list-subheader v-if="addableObsConnections.length">OBS</v-list-subheader>
+          <v-divider v-if="hiddenSections.length && addableObsCards.length" />
+          <v-list-subheader v-if="addableObsCards.length">OBS</v-list-subheader>
           <v-list-item
-            v-for="connection in addableObsConnections"
-            :key="`obs-add-${connection}`"
-            prepend-icon="mdi-video-outline"
-            :title="`OBS · ${connection}`"
-            @click="addObsCard(connection)"
+            v-for="card in addableObsCards"
+            :key="`obs-add-${card.panel}-${card.connection}`"
+            :prepend-icon="card.icon"
+            :title="`${card.title} · ${card.connection}`"
+            @click="addObsCard(card.connection, card.panel)"
           />
         </v-list>
       </v-menu>
@@ -87,7 +87,7 @@
           <v-card-title class="dashboard-card__title">
             <div class="d-flex align-center ga-2 min-w-0">
               <v-icon>{{ section.icon }}</v-icon>
-              <span class="text-truncate">{{ t(`sections.${section.key}`) }}</span>
+              <span class="text-truncate">{{ section.key === 'obs' ? obsCardTitle(section) : t(`sections.${section.key}`) }}</span>
               <v-chip v-if="section.key === 'obs' && obsConnectionFor(section)" size="x-small" variant="tonal" prepend-icon="mdi-connection">{{ obsConnectionFor(section) }}</v-chip>
             </div>
             <v-spacer />
@@ -331,7 +331,7 @@
                   variant="outlined" density="comfortable" hide-details
                   @update:model-value="(value)=>setObsConnection(section, String(value ?? ''))"
                 />
-                <RemoteObsControl :obs="sectionData('obs') ?? {}" :connection="obsConnectionFor(section)" @command="(method,params)=>command(method,params,'obs')" />
+                <RemoteObsControl :obs="sectionData('obs') ?? {}" :connection="obsConnectionFor(section)" :mode="obsPanelFor(section)" @command="(method,params)=>command(method,params,'obs')" />
               </template>
 
               <template v-else-if="section.key === 'yolobox'">
@@ -360,7 +360,7 @@
           <v-icon size="48" class="mb-3">mdi-view-dashboard-outline</v-icon>
           <div class="text-h6 mb-2">{{ t('instance.noDashboardCards') }}</div>
           <div class="text-body-2 text-medium-emphasis mb-5">{{ t('instance.noDashboardCardsHint') }}</div>
-          <v-menu v-if="hiddenSections.length || addableObsConnections.length">
+          <v-menu v-if="hiddenSections.length || addableObsCards.length">
             <template #activator="{ props }">
               <v-btn v-bind="props" prepend-icon="mdi-plus" color="primary" variant="tonal">
                 {{ t('instance.addCard') }}
@@ -374,14 +374,14 @@
                 :title="t(`sections.${section.key}`)"
                 @click="showSection(section.id)"
               />
-              <v-divider v-if="hiddenSections.length && addableObsConnections.length" />
-              <v-list-subheader v-if="addableObsConnections.length">OBS</v-list-subheader>
+              <v-divider v-if="hiddenSections.length && addableObsCards.length" />
+              <v-list-subheader v-if="addableObsCards.length">OBS</v-list-subheader>
               <v-list-item
-                v-for="connection in addableObsConnections"
-                :key="`obs-empty-add-${connection}`"
-                prepend-icon="mdi-video-outline"
-                :title="`OBS · ${connection}`"
-                @click="addObsCard(connection)"
+                v-for="card in addableObsCards"
+                :key="`obs-empty-add-${card.panel}-${card.connection}`"
+                :prepend-icon="card.icon"
+                :title="`${card.title} · ${card.connection}`"
+                @click="addObsCard(card.connection, card.panel)"
               />
             </v-list>
           </v-menu>
@@ -529,14 +529,17 @@ const obsConnections = computed(() => {
   }))
 })
 const obsConnectionNames = computed(() => obsConnections.value.map(item => item.name))
-const addableObsConnections = computed(() => {
-  const visibleConnections = new Set(
+type ObsPanelMode = 'scenes' | 'audio'
+const addableObsCards = computed(() => {
+  const visible = new Set(
     dashboardLayout.value
       .filter(item => item.key === 'obs' && item.visible)
-      .map(item => obsConnectionFor(item))
-      .filter(Boolean)
+      .map(item => `${obsConnectionFor(item)}:${obsPanelFor(item)}`)
   )
-  return obsConnectionNames.value.filter(name => !visibleConnections.has(name))
+  return obsConnectionNames.value.flatMap(connection => ([
+    { connection, panel: 'scenes' as ObsPanelMode, title: String(t('instance.obsScenes')), icon: 'mdi-view-dashboard-outline' },
+    { connection, panel: 'audio' as ObsPanelMode, title: String(t('instance.obsAudioMixer')), icon: 'mdi-tune-vertical' },
+  ])).filter(card => !visible.has(`${card.connection}:${card.panel}`))
 })
 const yolobox = computed<any>(() => sectionData('yolobox') ?? {})
 const musicProgress = computed(() => {
@@ -633,30 +636,48 @@ function normalizeDashboardLayout(items: any): DashboardCard[] {
     })
   }
 
-  // OBS is repeatable. Preserve every saved OBS card independently.
+  // OBS cards are repeatable and split by panel type (Scenes / Audio Mixer).
+  // v4 and older had one combined OBS card, so migrate each saved card into two cards.
   const savedObs = raw.filter((item:any) => String(item?.key) === 'obs')
   if (savedObs.length) {
     savedObs.forEach((saved:any, index:number) => {
       const connection = String(saved?.config?.obs_connection ?? '').trim()
-      const baseId = String(saved?.id ?? (connection ? `obs:${connection}` : `obs:${index + 1}`))
-      result.push({
-        id: uniqueCardId(baseId, usedIds),
-        key: 'obs',
-        icon: sectionIcons.obs,
-        visible: saved?.visible !== false,
-        config: saved?.config && typeof saved.config === 'object' ? { ...saved.config } : undefined,
-        column: Number.isFinite(Number(saved?.column)) ? Math.max(0, Number(saved.column)) : -1,
-        order: Number(saved?.order ?? dashboardSections.indexOf('obs') + index / 10),
+      const configuredPanel = String(saved?.config?.obs_panel ?? '')
+      const panels: ObsPanelMode[] = configuredPanel === 'audio' || configuredPanel === 'scenes'
+        ? [configuredPanel as ObsPanelMode]
+        : ['scenes', 'audio']
+      panels.forEach((panel, panelIndex) => {
+        const baseId = String(
+          configuredPanel
+            ? (saved?.id ?? `obs:${panel}:${connection || index + 1}`)
+            : `obs:${panel}:${connection || index + 1}`
+        )
+        result.push({
+          id: uniqueCardId(baseId, usedIds),
+          key: 'obs',
+          icon: panel === 'audio' ? 'mdi-tune-vertical' : 'mdi-view-dashboard-outline',
+          visible: saved?.visible !== false,
+          config: {
+            ...(saved?.config && typeof saved.config === 'object' ? saved.config : {}),
+            obs_connection: connection || undefined,
+            obs_panel: panel,
+          },
+          column: Number.isFinite(Number(saved?.column)) ? Math.max(0, Number(saved.column)) : -1,
+          order: Number(saved?.order ?? dashboardSections.indexOf('obs') + index / 10) + panelIndex / 100,
+        })
       })
     })
   } else {
-    result.push({
-      id: uniqueCardId('obs', usedIds),
-      key: 'obs',
-      icon: sectionIcons.obs,
-      visible: true,
-      column: -1,
-      order: dashboardSections.indexOf('obs'),
+    ;(['scenes', 'audio'] as ObsPanelMode[]).forEach((panel, index) => {
+      result.push({
+        id: uniqueCardId(`obs:${panel}`, usedIds),
+        key: 'obs',
+        icon: panel === 'audio' ? 'mdi-tune-vertical' : 'mdi-view-dashboard-outline',
+        visible: true,
+        column: -1,
+        order: dashboardSections.indexOf('obs') + index / 100,
+        config: { obs_panel: panel },
+      })
     })
   }
 
@@ -700,7 +721,7 @@ function saveDashboardLayout(){
   const generation = ++layoutSaveGeneration
   layoutSaveTimer = setTimeout(async () => {
     const layouts = { ...(store.userSettings?.dashboard_layouts ?? {}) }
-    layouts[id.value] = { version: 4, sections: serializedDashboardLayout() }
+    layouts[id.value] = { version: 5, sections: serializedDashboardLayout() }
     try {
       await store.updateUserSettings({ dashboard_layouts: layouts })
     } catch (error:any) {
@@ -751,6 +772,12 @@ function filteredMacroItems(section:any){
   const allowed = new Set(selected.map(String))
   return macroItems.value.filter(item => allowed.has(itemLabel(item)))
 }
+function obsPanelFor(section:any): ObsPanelMode {
+  return String(layoutItem(section)?.config?.obs_panel ?? 'scenes') === 'audio' ? 'audio' : 'scenes'
+}
+function obsCardTitle(section:any): string {
+  return obsPanelFor(section) === 'audio' ? String(t('instance.obsAudioMixer')) : String(t('instance.obsScenes'))
+}
 function obsConnectionFor(section:any): string {
   const configured = String(layoutItem(section)?.config?.obs_connection ?? '')
   if (configured && obsConnectionNames.value.includes(configured)) return configured
@@ -761,7 +788,7 @@ function obsConnectionOptions(section:any): string[]{
   const current = obsConnectionFor(section)
   const used = new Set(
     dashboardLayout.value
-      .filter(item => item.key === 'obs' && item.visible && item.id !== section?.id)
+      .filter(item => item.key === 'obs' && item.visible && item.id !== section?.id && obsPanelFor(item) === obsPanelFor(section))
       .map(item => obsConnectionFor(item))
       .filter(Boolean)
   )
@@ -792,9 +819,11 @@ function showSection(cardId: string){
   saveDashboardLayout()
 }
 
-function addObsCard(connection:string){
+function addObsCard(connection:string, panel:ObsPanelMode){
   const existing = dashboardLayout.value.find(item =>
-    item.key === 'obs' && String(item.config?.obs_connection ?? '') === connection
+    item.key === 'obs'
+      && String(item.config?.obs_connection ?? '') === connection
+      && obsPanelFor(item) === panel
   )
   if (existing) {
     existing.visible = true
@@ -805,12 +834,12 @@ function addObsCard(connection:string){
 
   const used = new Set(dashboardLayout.value.map(item => item.id))
   dashboardLayout.value.push({
-    id: uniqueCardId(`obs:${connection}`, used),
+    id: uniqueCardId(`obs:${panel}:${connection}`, used),
     key: 'obs',
-    icon: sectionIcons.obs,
+    icon: panel === 'audio' ? 'mdi-tune-vertical' : 'mdi-view-dashboard-outline',
     visible: true,
     column: shortestDashboardColumn(),
-    config: { obs_connection: connection },
+    config: { obs_connection: connection, obs_panel: panel },
   })
   saveDashboardLayout()
 }
@@ -861,7 +890,7 @@ function onDragEnd(){
   dropSlot.value = null
 }
 function resetDashboardLayout(){
-  dashboardLayout.value = defaultDashboardLayout.map((item,index) => ({
+  dashboardLayout.value = normalizeDashboardLayout([]).map((item,index) => ({
     ...item,
     config: item.config ? { ...item.config } : undefined,
     column:index % Math.max(1,dashboardColumnCount.value),
@@ -885,17 +914,26 @@ async function nativeMethod(method:string, params:any={}, section?:DashboardSect
   if (!online.value) return
   try{ await store.streamdingMethod(id.value,method,params,section) } catch(e:any){ store.error=e?.message ?? t('instance.actionError') }
 }
+function updateDashboardColumns(){
+  const width = dashboardBoard.value?.getBoundingClientRect().width || window.innerWidth
+  dashboardColumnCount.value = width >= 1500 ? 3 : width >= 900 ? 2 : 1
+}
+function attachDashboardResizeObserver(element: HTMLElement | null){
+  boardResizeObserver?.disconnect()
+  boardResizeObserver = null
+  if (element && typeof ResizeObserver !== 'undefined') {
+    boardResizeObserver = new ResizeObserver(() => updateDashboardColumns())
+    boardResizeObserver.observe(element)
+  }
+  updateDashboardColumns()
+}
+watch(dashboardBoard, element => attachDashboardResizeObserver(element), { flush: 'post' })
+const onWindowResize = () => updateDashboardColumns()
+
 onMounted(() => {
   loadDashboardLayout()
-  const updateColumns = () => {
-    const width = dashboardBoard.value?.clientWidth ?? window.innerWidth
-    dashboardColumnCount.value = width >= 1500 ? 3 : width >= 900 ? 2 : 1
-  }
-  updateColumns()
-  if (typeof ResizeObserver !== 'undefined' && dashboardBoard.value) {
-    boardResizeObserver = new ResizeObserver(updateColumns)
-    boardResizeObserver.observe(dashboardBoard.value)
-  }
+  updateDashboardColumns()
+  if (typeof window !== 'undefined') window.addEventListener('resize', onWindowResize, { passive: true })
   store.openDashboard(id.value).catch((e:any) => { store.error = e?.message ?? t('instance.loadError') })
 })
 const closeInstanceDashboardSocket = () => {
@@ -913,7 +951,10 @@ onBeforeUnmount(() => {
   if (layoutSaveTimer) clearTimeout(layoutSaveTimer)
   boardResizeObserver?.disconnect()
   boardResizeObserver = null
-  if (typeof window !== 'undefined') window.removeEventListener('pagehide', onPageHide)
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('pagehide', onPageHide)
+    window.removeEventListener('resize', onWindowResize)
+  }
   closeInstanceDashboardSocket()
 })
 </script>

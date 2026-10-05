@@ -131,7 +131,10 @@
     "dragCardsHint": "Ziehe Karten, um sie neu anzuordnen. Mit × kannst du Karten entfernen.",
     "noDashboardCards": "Keine Dashboard-Karten",
     "noDashboardCardsHint": "Füge eine Karte hinzu, um dieses Instanz-Dashboard aufzubauen.",
-    "resetDashboard": "Layout zurücksetzen"
+    "resetDashboard": "Layout zurücksetzen",
+    "obsScenes": "OBS-Szenen",
+    "obsAudioMixer": "OBS-Audiomixer",
+    "obsSwitchTo": "Wechseln zu"
   },
   "sections": {
     "music": "Musik",
