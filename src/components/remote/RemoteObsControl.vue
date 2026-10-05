@@ -4,7 +4,6 @@
       <div v-if="audioItems.length" class="audio-list">
         <div v-for="input in audioItems" :key="input.uuid" class="obs-audio-row">
           <div class="d-flex align-center ga-2 mb-2">
-            <v-icon size="small" class="text-medium-emphasis">mdi-volume-source</v-icon>
             <div class="text-truncate font-weight-medium flex-grow-1">{{ input.name }}</div>
             <span class="text-caption text-medium-emphasis">{{ Math.round(inputVolume(input)) }} dB</span>
             <v-btn :icon="inputMuted(input) ? 'mdi-volume-off' : 'mdi-volume-high'" size="small" variant="text" :color="inputMuted(input) ? 'error' : undefined" @click="toggleMute(input)" />
@@ -40,7 +39,7 @@
                 </button>
                 <div class="scene-card__actions">
                   <span class="text-caption text-medium-emphasis">{{ flattenedSources(scene).length }}</span>
-                  <v-btn v-if="!isActiveScene(scene)" size="small" variant="tonal" color="primary" prepend-icon="mdi-play" @click.stop="switchScene(scene)">{{ t('instance.obsSwitchTo') }}</v-btn>
+                  <v-btn v-if="!isActiveScene(scene)" class="scene-card__switch" size="small" variant="tonal" color="primary" prepend-icon="mdi-play" @click.stop="switchScene(scene)">{{ t('instance.obsSwitchTo') }}</v-btn>
                   <v-btn :icon="expanded.has(sceneKey(scene)) ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="x-small" variant="text" @click.stop="toggleExpanded(scene)" />
                 </div>
               </div>
@@ -103,7 +102,8 @@ function toggleSource(scene:any,source:any,enabled:boolean){sourceDraft[sourceKe
 </script>
 
 <style scoped>
-.obs-control{min-width:0}.audio-list{display:flex;flex-direction:column}.obs-audio-row{padding:12px 2px}.obs-audio-row+.obs-audio-row{border-top:1px solid rgba(var(--v-border-color),var(--v-border-opacity))}
-.canvas-block+.canvas-block{margin-top:16px}.canvas-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 2px 8px}.scene-list{display:grid;gap:9px}.scene-card{border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;background:rgba(0,0,0,.08)}.scene-card--active{border-color:rgba(var(--v-theme-primary),.5);box-shadow:inset 3px 0 0 rgb(var(--v-theme-primary))}.scene-card__header{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 10px}.scene-card__expand{appearance:none;border:0;background:transparent;color:inherit;display:flex;align-items:center;gap:8px;min-width:0;flex:1;text-align:left;cursor:pointer;padding:2px}.scene-card__name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.scene-card__actions{display:flex;align-items:center;gap:6px;flex:none}.source-tree{border-top:1px solid rgba(255,255,255,.06);padding:5px 0}.source-row{display:grid;grid-template-columns:calc(var(--depth) * 18px) 24px minmax(0,1fr) auto 48px;align-items:center;gap:8px;min-height:38px;padding:2px 8px}.source-row:hover{background:rgba(255,255,255,.035)}.source-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.source-kind{font-size:.72rem;opacity:.55;text-transform:capitalize}.source-toggle{justify-self:end}.source-icon{opacity:.8}
-@media(max-width:620px){.scene-card__header{align-items:flex-start;flex-wrap:wrap}.scene-card__actions{width:100%;justify-content:flex-end}.source-kind{display:none}.source-row{grid-template-columns:calc(var(--depth) * 12px) 22px minmax(0,1fr) 46px}}
+.obs-control{min-width:0;container-type:inline-size}.audio-list{display:flex;flex-direction:column}.obs-audio-row{padding:12px 2px}.obs-audio-row+.obs-audio-row{border-top:1px solid rgba(var(--v-border-color),var(--v-border-opacity))}
+.canvas-block+.canvas-block{margin-top:16px}.canvas-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 2px 8px}.scene-list{display:grid;gap:9px}.scene-card{border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;background:rgba(0,0,0,.08)}.scene-card--active{border-color:rgba(var(--v-theme-primary),.5);box-shadow:inset 3px 0 0 rgb(var(--v-theme-primary))}.scene-card__header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;min-width:0;padding:8px 8px 8px 10px}.scene-card__expand{appearance:none;border:0;background:transparent;color:inherit;display:flex;align-items:center;gap:8px;min-width:0;width:100%;text-align:left;cursor:pointer;padding:2px}.scene-card__name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.scene-card__actions{display:flex;align-items:center;justify-content:flex-end;gap:4px;min-width:0}.scene-card__switch{flex:none;white-space:nowrap;min-width:0}.source-tree{border-top:1px solid rgba(255,255,255,.06);padding:5px 0}.source-row{display:grid;grid-template-columns:calc(var(--depth) * 18px) 24px minmax(0,1fr) auto 48px;align-items:center;gap:8px;min-height:38px;padding:2px 8px}.source-row:hover{background:rgba(255,255,255,.035)}.source-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.source-kind{font-size:.72rem;opacity:.55;text-transform:capitalize}.source-toggle{justify-self:end}.source-icon{opacity:.8}
+@container(max-width:520px){.scene-card__header{grid-template-columns:1fr;align-items:start}.scene-card__actions{width:100%;justify-content:flex-end;padding-left:30px}.source-kind{display:none}.source-row{grid-template-columns:calc(var(--depth) * 12px) 22px minmax(0,1fr) 46px}}
+@container(max-width:360px){.scene-card__actions{padding-left:0}.scene-card__switch{flex:1}.scene-card__switch :deep(.v-btn__content){justify-content:center}}
 </style>
