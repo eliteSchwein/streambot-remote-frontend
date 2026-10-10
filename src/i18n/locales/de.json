@@ -137,7 +137,8 @@
     "obsSwitchTo": "Wechseln zu",
     "noObsAudioInputs": "Keine OBS-Audioeingänge verfügbar.",
     "noObsScenes": "Für diese OBS-Verbindung sind keine Szenen verfügbar.",
-    "noSceneItems": "Keine Szenenelemente."
+    "noSceneItems": "Keine Szenenelemente.",
+    "dropCardHere": "Karte hier ablegen"
   },
   "sections": {
     "music": "Musik",

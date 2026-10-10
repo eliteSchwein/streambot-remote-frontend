@@ -12,32 +12,6 @@
     </template>
 
     <template #actions>
-      <v-menu v-if="hiddenSections.length || addableObsCards.length">
-        <template #activator="{ props }">
-          <v-btn v-bind="props" prepend-icon="mdi-plus" variant="text">
-            {{ t('instance.addCard') }}
-          </v-btn>
-        </template>
-        <v-list density="comfortable">
-          <v-list-item
-            v-for="section in hiddenSections"
-            :key="section.id"
-            :prepend-icon="section.icon"
-            :title="t(`sections.${section.key}`)"
-            @click="showSection(section.id)"
-          />
-          <v-divider v-if="hiddenSections.length && addableObsCards.length" />
-          <v-list-subheader v-if="addableObsCards.length">OBS</v-list-subheader>
-          <v-list-item
-            v-for="card in addableObsCards"
-            :key="`obs-add-${card.panel}-${card.connection}`"
-            :prepend-icon="card.icon"
-            :title="`${card.title} · ${card.connection}`"
-            @click="addObsCard(card.connection, card.panel)"
-          />
-        </v-list>
-      </v-menu>
-
       <v-btn
         :prepend-icon="editLayout ? 'mdi-check' : 'mdi-view-dashboard-edit-outline'"
         :color="editLayout ? 'primary' : undefined"
@@ -53,7 +27,7 @@
 
     <template v-if="instance">
       <div
-        v-if="visibleSections.length"
+        v-if="visibleSections.length || editLayout"
         ref="dashboardBoard"
         class="dashboard-board"
         :class="{ 'dashboard-board--editing': editLayout }"
@@ -68,23 +42,67 @@
           @drop.prevent="onDropAt(columnIndex, column.length)"
         >
           <template v-for="(section, sectionIndex) in column" :key="section.id">
-            <div
+            <v-menu
               v-if="editLayout"
-              class="dashboard-drop-slot"
-              :class="{ 'dashboard-drop-slot--active': dropSlot?.column === columnIndex && dropSlot?.index === sectionIndex }"
-              @dragenter.prevent="onDragSlot(columnIndex, sectionIndex)"
-              @dragover.prevent="onDragSlot(columnIndex, sectionIndex)"
-              @drop.stop.prevent="onDropAt(columnIndex, sectionIndex)"
-            />
+              location="bottom"
+              :close-on-content-click="true"
+              :disabled="!(hiddenSections.length || addableObsCards.length)"
+            >
+              <template #activator="{ props: menuProps }">
+                <div
+                  v-bind="menuProps"
+                  class="dashboard-drop-slot"
+                  :class="{ 'dashboard-drop-slot--active': dropSlot?.column === columnIndex && dropSlot?.index === sectionIndex }"
+                  @dragenter.prevent="onDragSlot(columnIndex, sectionIndex)"
+                  @dragover.prevent="onDragSlot(columnIndex, sectionIndex)"
+                  @drop.stop.prevent="onDropAt(columnIndex, sectionIndex)"
+                >
+                  <v-btn
+                    v-if="!draggedSection && (hiddenSections.length || addableObsCards.length)"
+                    class="dashboard-drop-slot__add"
+                    prepend-icon="mdi-plus"
+                    size="small"
+                    variant="text"
+                  >
+                    {{ t('instance.addCard') }}
+                  </v-btn>
+                  <div v-else-if="draggedSection" class="dashboard-drop-slot__drop-label">
+                    <v-icon icon="mdi-arrow-down-bold" size="small" />
+                    <span>{{ t('instance.dropCardHere') }}</span>
+                  </div>
+                </div>
+              </template>
+              <v-list density="comfortable" min-width="260">
+                <v-list-item
+                  v-for="hidden in hiddenSections"
+                  :key="`slot-${columnIndex}-${sectionIndex}-${hidden.id}`"
+                  :prepend-icon="hidden.icon"
+                  :title="t(`sections.${hidden.key}`)"
+                  @click="showSectionAt(hidden.id, columnIndex, sectionIndex)"
+                />
+                <v-divider v-if="hiddenSections.length && addableObsCards.length" />
+                <v-list-subheader v-if="addableObsCards.length">OBS</v-list-subheader>
+                <v-list-item
+                  v-for="card in addableObsCards"
+                  :key="`slot-obs-${columnIndex}-${sectionIndex}-${card.panel}-${card.connection}`"
+                  :prepend-icon="card.icon"
+                  :title="`${card.title} · ${card.connection}`"
+                  @click="addObsCardAt(card.connection, card.panel, columnIndex, sectionIndex)"
+                />
+              </v-list>
+            </v-menu>
             <v-card
               rounded="xl"
               class="dashboard-card"
               :class="{ 'dashboard-card--editing': editLayout, 'dashboard-card--dragging': draggedSection === section.id }"
-              :draggable="editLayout"
-              @dragstart="onDragStart($event, section.id)"
-              @dragend="onDragEnd"
             >
-          <v-card-title class="dashboard-card__title">
+          <v-card-title
+            class="dashboard-card__title"
+            :class="{ 'dashboard-card__title--draggable': editLayout }"
+            :draggable="editLayout"
+            @dragstart="onDragStart($event, section.id)"
+            @dragend="onDragEnd"
+          >
             <div class="d-flex align-center ga-2 min-w-0">
               <v-icon>{{ section.icon }}</v-icon>
               <span class="text-truncate">{{ section.key === 'obs' ? obsCardTitle(section) : t(`sections.${section.key}`) }}</span>
@@ -162,14 +180,55 @@
             </v-card-text>
             </v-card>
           </template>
-          <div
+          <v-menu
             v-if="editLayout"
-            class="dashboard-drop-slot dashboard-drop-slot--end"
-            :class="{ 'dashboard-drop-slot--active': dropSlot?.column === columnIndex && dropSlot?.index === column.length }"
-            @dragenter.prevent="onDragSlot(columnIndex, column.length)"
-            @dragover.prevent="onDragSlot(columnIndex, column.length)"
-            @drop.stop.prevent="onDropAt(columnIndex, column.length)"
-          />
+            location="bottom"
+            :close-on-content-click="true"
+            :disabled="!(hiddenSections.length || addableObsCards.length)"
+          >
+            <template #activator="{ props: menuProps }">
+              <div
+                v-bind="menuProps"
+                class="dashboard-drop-slot dashboard-drop-slot--end"
+                :class="{ 'dashboard-drop-slot--active': dropSlot?.column === columnIndex && dropSlot?.index === column.length }"
+                @dragenter.prevent="onDragSlot(columnIndex, column.length)"
+                @dragover.prevent="onDragSlot(columnIndex, column.length)"
+                @drop.stop.prevent="onDropAt(columnIndex, column.length)"
+              >
+                <v-btn
+                  v-if="!draggedSection && (hiddenSections.length || addableObsCards.length)"
+                  class="dashboard-drop-slot__add"
+                  prepend-icon="mdi-plus"
+                  size="small"
+                  variant="text"
+                >
+                  {{ t('instance.addCard') }}
+                </v-btn>
+                <div v-else-if="draggedSection" class="dashboard-drop-slot__drop-label">
+                  <v-icon icon="mdi-arrow-down-bold" size="small" />
+                  <span>{{ t('instance.dropCardHere') }}</span>
+                </div>
+              </div>
+            </template>
+            <v-list density="comfortable" min-width="260">
+              <v-list-item
+                v-for="hidden in hiddenSections"
+                :key="`end-slot-${columnIndex}-${hidden.id}`"
+                :prepend-icon="hidden.icon"
+                :title="t(`sections.${hidden.key}`)"
+                @click="showSectionAt(hidden.id, columnIndex, column.length)"
+              />
+              <v-divider v-if="hiddenSections.length && addableObsCards.length" />
+              <v-list-subheader v-if="addableObsCards.length">OBS</v-list-subheader>
+              <v-list-item
+                v-for="card in addableObsCards"
+                :key="`end-slot-obs-${columnIndex}-${card.panel}-${card.connection}`"
+                :prepend-icon="card.icon"
+                :title="`${card.title} · ${card.connection}`"
+                @click="addObsCardAt(card.connection, card.panel, columnIndex, column.length)"
+              />
+            </v-list>
+          </v-menu>
         </div>
       </div>
 
@@ -178,31 +237,9 @@
           <v-icon size="48" class="mb-3">mdi-view-dashboard-outline</v-icon>
           <div class="text-h6 mb-2">{{ t('instance.noDashboardCards') }}</div>
           <div class="text-body-2 text-medium-emphasis mb-5">{{ t('instance.noDashboardCardsHint') }}</div>
-          <v-menu v-if="hiddenSections.length || addableObsCards.length">
-            <template #activator="{ props }">
-              <v-btn v-bind="props" prepend-icon="mdi-plus" color="primary" variant="tonal">
-                {{ t('instance.addCard') }}
-              </v-btn>
-            </template>
-            <v-list>
-              <v-list-item
-                v-for="section in hiddenSections"
-                :key="section.id"
-                :prepend-icon="section.icon"
-                :title="t(`sections.${section.key}`)"
-                @click="showSection(section.id)"
-              />
-              <v-divider v-if="hiddenSections.length && addableObsCards.length" />
-              <v-list-subheader v-if="addableObsCards.length">OBS</v-list-subheader>
-              <v-list-item
-                v-for="card in addableObsCards"
-                :key="`obs-empty-add-${card.panel}-${card.connection}`"
-                :prepend-icon="card.icon"
-                :title="`${card.title} · ${card.connection}`"
-                @click="addObsCard(card.connection, card.panel)"
-              />
-            </v-list>
-          </v-menu>
+          <v-btn prepend-icon="mdi-view-dashboard-edit-outline" color="primary" variant="tonal" @click="editLayout = true">
+            {{ t('instance.editDashboard') }}
+          </v-btn>
         </v-card-text>
       </v-card>
 
@@ -541,6 +578,50 @@ function setObsConnection(section:any, value:string){
   item.config = { ...(item.config ?? {}), obs_connection: value || undefined }
   saveDashboardLayout()
 }
+function insertVisibleCardAt(card: DashboardCard, column: number, index: number){
+  const count = Math.max(1, dashboardColumnCount.value)
+  const targetColumn = Math.max(0, Math.min(count - 1, column))
+  const columns = Array.from({ length: count }, (_, col) =>
+    (dashboardColumns.value[col] ?? []).filter(item => item.id !== card.id)
+  )
+  const targetIndex = Math.max(0, Math.min(index, columns[targetColumn].length))
+  card.visible = true
+  card.column = targetColumn
+  columns[targetColumn].splice(targetIndex, 0, card)
+  dashboardLayout.value = [
+    ...columns.flat(),
+    ...dashboardLayout.value.filter(item => !item.visible && item.id !== card.id),
+  ]
+  saveDashboardLayout()
+}
+
+function showSectionAt(cardId: string, column: number, index: number){
+  const section = dashboardLayout.value.find(item => item.id === cardId)
+  if (!section) return
+  insertVisibleCardAt(section, column, index)
+}
+
+function addObsCardAt(connection:string, panel:ObsPanelMode, column:number, index:number){
+  let card = dashboardLayout.value.find(item =>
+    item.key === 'obs'
+      && String(item.config?.obs_connection ?? '') === connection
+      && obsPanelFor(item) === panel
+  )
+  if (!card) {
+    const used = new Set(dashboardLayout.value.map(item => item.id))
+    card = {
+      id: uniqueCardId(`obs:${panel}:${connection}`, used),
+      key: 'obs',
+      icon: panel === 'audio' ? 'mdi-tune-vertical' : 'mdi-view-dashboard-outline',
+      visible: false,
+      column,
+      config: { obs_connection: connection, obs_panel: panel },
+    }
+    dashboardLayout.value.push(card)
+  }
+  insertVisibleCardAt(card, column, index)
+}
+
 function shortestDashboardColumn(): number {
   const counts = dashboardColumns.value.map(column => column.length)
   return counts.indexOf(Math.min(...counts))

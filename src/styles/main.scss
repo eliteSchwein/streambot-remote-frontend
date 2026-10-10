@@ -196,3 +196,38 @@ body { margin: 0; }
 /* components/remote/RemoteYoloboxControl.vue */
 .yolobox-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .yolobox-mixer-slider{width:220px}
+
+/* Dashboard editor: Commander-style slot insertion + header dragging */
+.dashboard-card--editing{cursor:default}
+.dashboard-card__title--draggable{cursor:grab;user-select:none}
+.dashboard-card__title--draggable:active{cursor:grabbing}
+.dashboard-drop-slot{position:relative;display:flex;align-items:center;justify-content:center;min-height:24px;cursor:pointer}
+.dashboard-drop-slot__add{opacity:.42;transform:scale(.86);transition:opacity .14s ease,transform .14s ease}
+.dashboard-drop-slot:hover .dashboard-drop-slot__add,.dashboard-drop-slot:focus-within .dashboard-drop-slot__add{opacity:1;transform:scale(1)}
+.dashboard-drop-slot--active{cursor:copy}
+.dashboard-drop-slot--active .dashboard-drop-slot__add{display:none}
+
+/* Dashboard editor slot labels */
+.dashboard-drop-slot__add{
+  min-width:0;
+  padding-inline:10px;
+  font-size:.75rem;
+  letter-spacing:.01em;
+  text-transform:none;
+}
+.dashboard-drop-slot__drop-label{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  color:rgb(var(--v-theme-primary));
+  font-size:.76rem;
+  font-weight:600;
+  line-height:1;
+  opacity:.72;
+  pointer-events:none;
+  transition:opacity .14s ease,transform .14s ease;
+}
+.dashboard-drop-slot--active .dashboard-drop-slot__drop-label{
+  opacity:1;
+  transform:scale(1.03);
+}
