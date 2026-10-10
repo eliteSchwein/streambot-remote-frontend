@@ -48,9 +48,40 @@ function normalizeInstance(instance: any): RemoteInstance | null {
 }
 
 function normalizeInstances(value: any): RemoteInstance[] {
-  return asList<any>(value, ['instances', 'items', 'data'])
-    .map(normalizeInstance)
-    .filter(Boolean) as RemoteInstance[]
+  // `notify_instances_update` is the canonical source for the instance list.
+  // Backend payloads have used a couple of wrappers over time, including
+  // `{ instances: [...] }` and `{ data: { instances: [...] } }`. Unwrap those
+  // explicitly instead of treating nested wrapper objects as instance records.
+  const unwrap = (input: any, depth = 0): any[] => {
+    if (depth > 6 || input === undefined || input === null) return []
+    if (Array.isArray(input)) return input
+    if (typeof input !== 'object') return []
+
+    for (const key of ['instances', 'items']) {
+      if (input[key] !== undefined) return unwrap(input[key], depth + 1)
+    }
+
+    if (input.data !== undefined && input.data !== input) {
+      return unwrap(input.data, depth + 1)
+    }
+
+    // Some backend versions keyed instances by UUID instead of returning an
+    // array. Only treat the object as a map when its values look like records.
+    const values = Object.values(input)
+    if (values.length && values.every(value => value && typeof value === 'object' && !Array.isArray(value))) {
+      return values
+    }
+
+    return []
+  }
+
+  const byId = new Map<string, RemoteInstance>()
+  for (const raw of unwrap(value)) {
+    const instance = normalizeInstance(raw)
+    if (!instance) continue
+    byId.set(instanceKey(instance), instance)
+  }
+  return [...byId.values()]
 }
 
 export function instanceIsOwner(instance: any, me?: any): boolean {
@@ -148,6 +179,7 @@ let userSocket: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 let socketStopped = false
+let instancesRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
 type InstanceSocketState = {
   socket: WebSocket | null
@@ -476,6 +508,25 @@ export const useAppStore = defineStore('app', {
       await waitForSocketMessage(message => eventType(message) === '__socket_open__', timeout)
     },
 
+    requestInstancesRefresh(delay = 0) {
+      if (instancesRefreshTimer) {
+        clearTimeout(instancesRefreshTimer)
+        instancesRefreshTimer = null
+      }
+
+      const request = () => {
+        instancesRefreshTimer = null
+        if (userSocket?.readyState !== WebSocket.OPEN) return
+        socketSend({ type: 'request_instances' })
+      }
+
+      if (delay > 0) {
+        instancesRefreshTimer = setTimeout(request, delay)
+      } else {
+        request()
+      }
+    },
+
     async openDashboard(id: string | number) {
       const key = String(id)
       this.activeDashboardId = key
@@ -596,9 +647,18 @@ export const useAppStore = defineStore('app', {
       }
 
       if (type === 'notify_instance_presence') {
-        const index = this.instances.findIndex(instance => instanceKey(instance) === instanceId)
         const presence = payload?.presence ?? payload?.instance ?? payload
-        if (index >= 0) this.instances[index] = { ...this.instances[index], ...presence, id: instanceId }
+        const online = presence?.online ?? presence?.connected ?? presence?.is_connected
+        const lastSeen = presence?.last_seen ?? presence?.lastSeen
+        this.instances = this.instances.map(instance => {
+          if (instanceKey(instance) !== instanceId) return instance
+          return {
+            ...instance,
+            ...(online !== undefined ? { online: Boolean(online) } : {}),
+            ...(lastSeen !== undefined ? { last_seen: lastSeen } : {}),
+            id: instanceId,
+          }
+        })
         return
       }
 
@@ -717,6 +777,11 @@ export const useAppStore = defineStore('app', {
             if (registration.status !== 'pending') {
               this.registrationNotice = registration.status
             }
+            if (registration.status === 'completed') {
+              // Pairing completion can arrive before the canonical instance list.
+              // Ask for it explicitly so owner/access metadata is available without reload.
+              this.requestInstancesRefresh(25)
+            }
           }
 
           if (type === 'notify_user_update') {
@@ -766,12 +831,11 @@ export const useAppStore = defineStore('app', {
           }
 
           if (type === 'notify_instance_created' || type === 'notify_instance_access_granted') {
-            const candidate = normalizeInstance(payload?.instance ?? payload?.data ?? payload)
-            if (!candidate) return
-            const key = instanceKey(candidate)
-            const index = this.instances.findIndex(instance => instanceKey(instance) === key)
-            if (index >= 0) this.instances[index] = { ...this.instances[index], ...candidate, id: key }
-            else this.instances.push(candidate)
+            // Lifecycle payloads are partial and must not become the canonical
+            // instance record. Explicitly request the complete accessible-instance
+            // list instead of relying on a second push arriving in the right order.
+            // That response contains owner/access metadata used by owner-only UI.
+            this.requestInstancesRefresh(25)
             return
           }
 
@@ -800,9 +864,23 @@ export const useAppStore = defineStore('app', {
           if (type === 'notify_instance_presence') {
             const instanceId = messageInstanceId(message) || instanceKey(payload?.instance ?? payload)
             if (!instanceId) return
-            const index = this.instances.findIndex(instance => instanceKey(instance) === instanceId)
             const presence = payload?.presence ?? payload?.instance ?? payload
-            if (index >= 0) this.instances[index] = { ...this.instances[index], ...presence, id: instanceId }
+
+            // Presence updates are partial by design. Patch only presence fields
+            // and preserve the canonical ownership/access metadata from
+            // `notify_instances_update`. Replace the array immutably so every
+            // consumer reacts immediately.
+            const online = presence?.online ?? presence?.connected ?? presence?.is_connected
+            const lastSeen = presence?.last_seen ?? presence?.lastSeen
+            this.instances = this.instances.map(instance => {
+              if (instanceKey(instance) !== instanceId) return instance
+              return {
+                ...instance,
+                ...(online !== undefined ? { online: Boolean(online) } : {}),
+                ...(lastSeen !== undefined ? { last_seen: lastSeen } : {}),
+                id: instanceId,
+              }
+            })
             return
           }
 
@@ -929,6 +1007,10 @@ export const useAppStore = defineStore('app', {
     disconnectUserSocket() {
       socketStopped = true
       this.userSocketConnected = false
+      if (instancesRefreshTimer) {
+        clearTimeout(instancesRefreshTimer)
+        instancesRefreshTimer = null
+      }
       for (const instanceId of Array.from(instanceSockets.keys())) this.disconnectInstanceSocket(instanceId)
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
       for (const waiter of socketWaiters) {
