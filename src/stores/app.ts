@@ -117,6 +117,7 @@ export type StreamDingRegistration = {
   twitchLogin: string | null
   status: 'pending' | 'completed' | 'expired' | 'failed'
   expiresAt: string | null
+  expiresIn: number | null
 }
 
 function asList<T>(value: any, keys: string[]): T[] {
@@ -148,7 +149,14 @@ function registrationFromMessage(message: any): StreamDingRegistration | null {
     name: payload?.name ?? payload?.instance_name ?? message?.name ?? null,
     twitchLogin: payload?.twitch_login ?? payload?.twitchLogin ?? message?.twitch_login ?? null,
     status,
-    expiresAt: payload?.expires_at ?? payload?.expiresAt ?? message?.expires_at ?? null,
+    expiresAt: payload?.expires_at ?? payload?.expiresAt ?? message?.expires_at ?? message?.expiresAt ?? null,
+    expiresIn: (() => {
+      const raw = payload?.remaining_seconds ?? payload?.remainingSeconds ?? payload?.expires_in ?? payload?.expiresIn
+        ?? payload?.timeout_remaining ?? payload?.timeoutRemaining ?? payload?.countdown
+        ?? message?.remaining_seconds ?? message?.remainingSeconds ?? message?.expires_in ?? message?.expiresIn
+      const value = Number(raw)
+      return Number.isFinite(value) ? Math.max(0, Math.ceil(value)) : null
+    })(),
   }
 }
 
@@ -179,7 +187,6 @@ let userSocket: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 let socketStopped = false
-let instancesRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
 type InstanceSocketState = {
   socket: WebSocket | null
@@ -508,25 +515,6 @@ export const useAppStore = defineStore('app', {
       await waitForSocketMessage(message => eventType(message) === '__socket_open__', timeout)
     },
 
-    requestInstancesRefresh(delay = 0) {
-      if (instancesRefreshTimer) {
-        clearTimeout(instancesRefreshTimer)
-        instancesRefreshTimer = null
-      }
-
-      const request = () => {
-        instancesRefreshTimer = null
-        if (userSocket?.readyState !== WebSocket.OPEN) return
-        socketSend({ type: 'request_instances' })
-      }
-
-      if (delay > 0) {
-        instancesRefreshTimer = setTimeout(request, delay)
-      } else {
-        request()
-      }
-    },
-
     async openDashboard(id: string | number) {
       const key = String(id)
       this.activeDashboardId = key
@@ -777,10 +765,28 @@ export const useAppStore = defineStore('app', {
             if (registration.status !== 'pending') {
               this.registrationNotice = registration.status
             }
+
+            // A completed registration belongs to the currently authenticated
+            // user. If the backend already includes the new instance id in this
+            // message, expose it immediately instead of waiting for the following
+            // canonical notify_instances_update. The canonical list will replace
+            // this lightweight record as soon as it arrives.
             if (registration.status === 'completed') {
-              // Pairing completion can arrive before the canonical instance list.
-              // Ask for it explicitly so owner/access metadata is available without reload.
-              this.requestInstancesRefresh(25)
+              const registeredInstanceId = messageInstanceId(message)
+              if (registeredInstanceId) {
+                const existing = this.instances.find(instance => instanceKey(instance) === registeredInstanceId)
+                const provisional = {
+                  ...(existing ?? {}),
+                  id: registeredInstanceId,
+                  instance_id: registeredInstanceId,
+                  ...(registration.name ? { name: registration.name } : {}),
+                  is_owner: true,
+                  access_role: existing?.access_role ?? 'owner',
+                } as RemoteInstance
+                this.instances = existing
+                  ? this.instances.map(instance => instanceKey(instance) === registeredInstanceId ? provisional : instance)
+                  : [...this.instances, provisional]
+              }
             }
           }
 
@@ -830,12 +836,49 @@ export const useAppStore = defineStore('app', {
             return
           }
 
-          if (type === 'notify_instance_created' || type === 'notify_instance_access_granted') {
-            // Lifecycle payloads are partial and must not become the canonical
-            // instance record. Explicitly request the complete accessible-instance
-            // list instead of relying on a second push arriving in the right order.
-            // That response contains owner/access metadata used by owner-only UI.
-            this.requestInstancesRefresh(25)
+          if (type === 'notify_instance_created') {
+            // Registration-created instances belong to the current user. Show the
+            // lightweight record immediately so the Instances page updates without
+            // waiting for the canonical list. Ownership is explicit here so owner-
+            // only controls (delete) are available immediately as well.
+            const raw = payload?.instance ?? payload?.data?.instance ?? payload
+            const instanceId = messageInstanceId(message) || instanceKey(raw)
+            if (!instanceId) return
+
+            const existing = this.instances.find(instance => instanceKey(instance) === instanceId)
+            const normalized = normalizeInstance({
+              ...(existing ?? {}),
+              ...(raw && typeof raw === 'object' ? raw : {}),
+              id: instanceId,
+              instance_id: raw?.instance_id ?? instanceId,
+              is_owner: raw?.is_owner ?? raw?.isOwner ?? true,
+              access_role: raw?.access_role ?? raw?.accessRole ?? existing?.access_role ?? 'owner',
+            })
+            if (!normalized) return
+
+            this.instances = existing
+              ? this.instances.map(instance => instanceKey(instance) === instanceId ? normalized : instance)
+              : [...this.instances, normalized]
+            return
+          }
+
+          if (type === 'notify_instance_access_granted') {
+            // Access grants are not necessarily ownership grants. Add the record if
+            // enough data is present, but never invent owner metadata here.
+            const raw = payload?.instance ?? payload?.data?.instance ?? payload
+            const instanceId = messageInstanceId(message) || instanceKey(raw)
+            if (!instanceId) return
+            const existing = this.instances.find(instance => instanceKey(instance) === instanceId)
+            const normalized = normalizeInstance({
+              ...(existing ?? {}),
+              ...(raw && typeof raw === 'object' ? raw : {}),
+              id: instanceId,
+              instance_id: raw?.instance_id ?? instanceId,
+            })
+            if (!normalized) return
+            this.instances = existing
+              ? this.instances.map(instance => instanceKey(instance) === instanceId ? normalized : instance)
+              : [...this.instances, normalized]
             return
           }
 
@@ -1007,10 +1050,6 @@ export const useAppStore = defineStore('app', {
     disconnectUserSocket() {
       socketStopped = true
       this.userSocketConnected = false
-      if (instancesRefreshTimer) {
-        clearTimeout(instancesRefreshTimer)
-        instancesRefreshTimer = null
-      }
       for (const instanceId of Array.from(instanceSockets.keys())) this.disconnectInstanceSocket(instanceId)
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
       for (const waiter of socketWaiters) {

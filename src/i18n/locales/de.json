@@ -160,7 +160,9 @@
     "waiting": "Warte darauf, dass StreamDing die PIN bestätigt…",
     "completed": "StreamDing wurde erfolgreich gekoppelt.",
     "expired": "Die StreamDing-Kopplungsanfrage ist abgelaufen.",
-    "failed": "Die StreamDing-Kopplung ist fehlgeschlagen."
+    "failed": "Die StreamDing-Kopplung ist fehlgeschlagen.",
+    "expiresIn": "PIN läuft ab in",
+    "seconds": "{seconds}s"
   },
   "settings": {
     "title": "Einstellungen",

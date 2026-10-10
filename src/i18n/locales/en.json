@@ -160,7 +160,9 @@
     "waiting": "Waiting for StreamDing to verify the PIN…",
     "completed": "StreamDing pairing completed.",
     "expired": "The StreamDing pairing request expired.",
-    "failed": "StreamDing pairing failed."
+    "failed": "StreamDing pairing failed.",
+    "expiresIn": "PIN expires in",
+    "seconds": "{seconds}s"
   },
   "settings": {
     "title": "Settings",
