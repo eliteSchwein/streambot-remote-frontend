@@ -309,6 +309,28 @@ function messageInstanceId(message: any) {
   )
 }
 
+const dashboardMethodSectionMap: Record<string, DashboardSectionName> = {
+  notify_music_update: 'music',
+  notify_giveaway_update: 'giveaway',
+  notify_interactions_update: 'interactions',
+  notify_interaction_update: 'interactions',
+  notify_auto_macro_update: 'auto_macros',
+  notify_auto_macros_update: 'auto_macros',
+  notify_macro_update: 'macros',
+  notify_macros_update: 'macros',
+  notify_channel_points_update: 'channel_points',
+  notify_channel_point_update: 'channel_points',
+  notify_rotating_scene_update: 'rotating_scene',
+  notify_audio_update: 'audio',
+  notify_audio_outputs_update: 'audio',
+  notify_obs_update: 'obs',
+  notify_yolobox_update: 'yolobox',
+}
+
+function dashboardSectionForMethod(method: any): DashboardSectionName | '' {
+  return dashboardMethodSectionMap[String(method ?? '')] ?? ''
+}
+
 function inferDashboardSection(message: any, payload: any): DashboardSectionName | '' {
   const explicit = firstNonEmptyString(
     payload?.section, payload?.dashboard_section, payload?.dashboardSection, payload?.key,
@@ -316,24 +338,47 @@ function inferDashboardSection(message: any, payload: any): DashboardSectionName
   )
   if (dashboardSections.includes(explicit as DashboardSectionName)) return explicit as DashboardSectionName
 
-  const method = firstNonEmptyString(payload?.method, payload?.notify, payload?.event, message?.notify)
-  const map: Record<string, DashboardSectionName> = {
-    notify_music_update: 'music',
-    notify_giveaway_update: 'giveaway',
-    notify_interactions_update: 'interactions',
-    notify_interaction_update: 'interactions',
-    notify_auto_macro_update: 'auto_macros',
-    notify_auto_macros_update: 'auto_macros',
-    notify_macro_update: 'macros',
-    notify_channel_points_update: 'channel_points',
-    notify_channel_point_update: 'channel_points',
-    notify_rotating_scene_update: 'rotating_scene',
-    notify_audio_update: 'audio',
-    notify_audio_outputs_update: 'audio',
-    notify_obs_update: 'obs',
-    notify_yolobox_update: 'yolobox',
+  // New cloud transport wraps change-only dashboard notifications as:
+  // { type: 'update', method: 'notify_music_update', data: ... }
+  // `method` therefore lives on the outer envelope and must be considered here.
+  const method = firstNonEmptyString(
+    payload?.method, payload?.notify, payload?.event,
+    message?.method, message?.notify, message?.event,
+  )
+  return dashboardSectionForMethod(method)
+}
+
+function normalizeCloudDashboardSnapshot(value: any): DashboardSnapshot {
+  if (!value || typeof value !== 'object') return {}
+
+  // The current cloud snapshot may already be the dashboard object/sections.
+  const direct = normalizeDashboardSnapshot(
+    value?.dashboard ?? value?.state?.dashboard ?? value?.state ?? value?.snapshot ?? value,
+  )
+
+  const result: DashboardSnapshot = { ...direct }
+
+  // Also accept snapshots keyed by the original notify method. This keeps the
+  // frontend compatible with the cloud cache representation without forcing the
+  // backend to expand it into section names first.
+  const candidates = [value, value?.data, value?.updates, value?.notifications, value?.methods]
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+    for (const [method, payload] of Object.entries(candidate)) {
+      const section = dashboardSectionForMethod(method)
+      if (section) result[section] = payload
+    }
   }
-  return map[method] ?? ''
+
+  // Metadata is intentionally not a dashboard card, but it is kept beside the
+  // sections because the rest of the UI already reads it from there.
+  const meta = value?.meta ?? value?.dashboard_meta ?? value?.dashboardMeta ?? value?.metadata
+  if (meta && typeof meta === 'object' && !Array.isArray(meta)) Object.assign(result, meta)
+  for (const key of ['version', 'updated_at', 'online', 'connections']) {
+    if (value[key] !== undefined) result[key] = value[key]
+  }
+
+  return result
 }
 
 export const useAppStore = defineStore('app', {
@@ -576,6 +621,43 @@ export const useAppStore = defineStore('app', {
     handleInstanceSocketMessage(instanceId: string, message: any) {
       const type = eventType(message)
       const payload = messagePayload(message)
+
+      // New cloud dashboard transport (2026-10-15): the instance socket gets one
+      // complete `snapshot`, then only changed `update` envelopes. Legacy
+      // notify_dashboard_snapshot/update frames are still accepted below.
+      if (type === 'snapshot') {
+        const snapshot = normalizeCloudDashboardSnapshot(payload)
+        if (Object.keys(snapshot).length) this.dashboards[instanceId] = snapshot
+        return
+      }
+
+      if (type === 'update') {
+        const method = firstNonEmptyString(message?.method, payload?.method)
+
+        if (method === 'notify_dashboard_meta_update') {
+          const meta = payload?.meta ?? payload?.dashboard_meta ?? payload?.dashboardMeta ?? payload
+          if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+            this.dashboards[instanceId] = { ...(this.dashboards[instanceId] ?? {}), ...meta }
+          }
+          return
+        }
+
+        if (method === 'notify_yolobox_preview') {
+          const value = payload?.preview ?? payload?.image ?? payload?.data ?? payload
+          const current = this.dashboards[instanceId] ?? {}
+          this.dashboards[instanceId] = { ...current, yolobox: { ...(current.yolobox ?? {}), preview: value } }
+          return
+        }
+
+        const section = dashboardSectionForMethod(method) || inferDashboardSection(message, payload)
+        if (section) {
+          // In the generic update envelope `data` is already the changed section
+          // value. Do not wrap the envelope itself into the card state.
+          const value = message?.data ?? payload?.value ?? payload?.section_data ?? payload?.sectionData ?? payload
+          this.dashboards[instanceId] = { ...(this.dashboards[instanceId] ?? {}), [section]: value }
+        }
+        return
+      }
 
       if (type === 'notify_dashboard_snapshot') {
         const rawSnapshot = payload?.sections
