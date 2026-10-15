@@ -348,6 +348,88 @@ function inferDashboardSection(message: any, payload: any): DashboardSectionName
   return dashboardSectionForMethod(method)
 }
 
+function isPlainObject(value: any): value is Record<string, any> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+// The instance WebSocket protocol is stateful:
+// - the first `snapshot` contains the complete state
+// - every following `update` contains only keys that changed
+//
+// Keep the complete dashboard state in Pinia and merge every update into it.
+// Objects recurse; arrays, primitives and null replace the previous value.
+function mergeDashboardState(current: any, patch: any): any {
+  if (Array.isArray(patch)) return [...patch]
+  if (!isPlainObject(patch)) return patch
+
+  const base = isPlainObject(current) ? current : {}
+  const result: Record<string, any> = { ...base }
+
+  for (const [key, patchValue] of Object.entries(patch)) {
+    result[key] = mergeDashboardState(base[key], patchValue)
+  }
+
+  return result
+}
+
+function musicTrackIdentity(value: any): string {
+  if (!value || typeof value !== 'object') return ''
+  const track = value.track && typeof value.track === 'object' ? value.track : {}
+  return firstNonEmptyString(
+    track.path,
+    value.file,
+    track.filename,
+    value.filename,
+    [track.artist ?? value.artist, track.title ?? value.title].filter(Boolean).join(' :: '),
+    track.title,
+    value.title,
+  )
+}
+
+function normalizeMusicPatch(currentMusic: any, patch: any): any {
+  if (!isPlainObject(patch)) return patch
+
+  // MusicHelper sends the artwork once for a track and may emit thumbnail:null
+  // on later updates for that *same* track. With the delta protocol that null
+  // must not erase the artwork already cached in Pinia. A real track change is
+  // allowed to clear it, so tracks without artwork still fall back correctly.
+  if (Object.prototype.hasOwnProperty.call(patch, 'thumbnail')
+    && patch.thumbnail === null
+    && currentMusic?.thumbnail) {
+    const currentIdentity = musicTrackIdentity(currentMusic)
+    const candidate = mergeDashboardState(currentMusic, patch)
+    const candidateIdentity = musicTrackIdentity(candidate)
+
+    if (currentIdentity && candidateIdentity === currentIdentity) {
+      const { thumbnail: _ignored, ...withoutThumbnail } = patch
+      return withoutThumbnail
+    }
+  }
+
+  return patch
+}
+
+function patchDashboardSection(
+  dashboard: DashboardSnapshot,
+  section: DashboardSectionName,
+  patch: any,
+): DashboardSnapshot {
+  const current = dashboard ?? {}
+  const effectivePatch = section === 'music'
+    ? normalizeMusicPatch(current[section], patch)
+    : patch
+  return {
+    ...current,
+    [section]: mergeDashboardState(current[section], effectivePatch),
+  }
+}
+
+function patchDashboardMeta(dashboard: DashboardSnapshot, patch: any): DashboardSnapshot {
+  const current = dashboard ?? {}
+  const merged = mergeDashboardState(current, patch)
+  return isPlainObject(merged) ? merged : current
+}
+
 function normalizeCloudDashboardSnapshot(value: any): DashboardSnapshot {
   if (!value || typeof value !== 'object') return {}
 
@@ -634,27 +716,42 @@ export const useAppStore = defineStore('app', {
       if (type === 'update') {
         const method = firstNonEmptyString(message?.method, payload?.method)
 
+        // The protocol guarantees that every message after the initial snapshot
+        // only contains changed keys. Therefore *every* `update` is merged into
+        // the state already held in Pinia; no `partial` marker is required.
+        // Keep compatibility with the short-lived nested envelope variant too.
+        const nestedPatchEnvelope = isPlainObject(message?.data)
+          && message.data?.partial === true
+          && Object.prototype.hasOwnProperty.call(message.data, 'data')
+        const patch = nestedPatchEnvelope
+          ? message.data.data
+          : message?.data ?? payload?.data ?? payload?.value ?? payload?.section_data ?? payload?.sectionData ?? payload
+
         if (method === 'notify_dashboard_meta_update') {
-          const meta = payload?.meta ?? payload?.dashboard_meta ?? payload?.dashboardMeta ?? payload
+          const meta = patch?.meta ?? patch?.dashboard_meta ?? patch?.dashboardMeta ?? patch
           if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
-            this.dashboards[instanceId] = { ...(this.dashboards[instanceId] ?? {}), ...meta }
+            this.dashboards[instanceId] = patchDashboardMeta(this.dashboards[instanceId] ?? {}, meta)
           }
           return
         }
 
         if (method === 'notify_yolobox_preview') {
-          const value = payload?.preview ?? payload?.image ?? payload?.data ?? payload
-          const current = this.dashboards[instanceId] ?? {}
-          this.dashboards[instanceId] = { ...current, yolobox: { ...(current.yolobox ?? {}), preview: value } }
+          const value = patch?.preview ?? patch?.image ?? patch?.data ?? patch
+          this.dashboards[instanceId] = patchDashboardSection(
+            this.dashboards[instanceId] ?? {},
+            'yolobox',
+            { preview: value },
+          )
           return
         }
 
         const section = dashboardSectionForMethod(method) || inferDashboardSection(message, payload)
         if (section) {
-          // In the generic update envelope `data` is already the changed section
-          // value. Do not wrap the envelope itself into the card state.
-          const value = message?.data ?? payload?.value ?? payload?.section_data ?? payload?.sectionData ?? payload
-          this.dashboards[instanceId] = { ...(this.dashboards[instanceId] ?? {}), [section]: value }
+          this.dashboards[instanceId] = patchDashboardSection(
+            this.dashboards[instanceId] ?? {},
+            section,
+            patch,
+          )
         }
         return
       }
@@ -678,10 +775,10 @@ export const useAppStore = defineStore('app', {
       if (type === 'notify_dashboard_update') {
         const fullDashboard = payload?.dashboard ?? payload?.state?.dashboard
         if (fullDashboard && typeof fullDashboard === 'object') {
-          this.dashboards[instanceId] = {
-            ...(this.dashboards[instanceId] ?? {}),
-            ...normalizeDashboardSnapshot(fullDashboard),
-          }
+          this.dashboards[instanceId] = patchDashboardMeta(
+            this.dashboards[instanceId] ?? {},
+            normalizeDashboardSnapshot(fullDashboard),
+          )
           return
         }
 
@@ -689,8 +786,10 @@ export const useAppStore = defineStore('app', {
         if (!section) {
           const present = dashboardSections.filter(key => Object.prototype.hasOwnProperty.call(payload ?? {}, key))
           if (present.length) {
-            const current = { ...(this.dashboards[instanceId] ?? {}) }
-            for (const key of present) current[key] = payload[key]
+            let current = this.dashboards[instanceId] ?? {}
+            for (const key of present) {
+              current = patchDashboardSection(current, key, payload[key])
+            }
             this.dashboards[instanceId] = current
           }
           return
@@ -705,7 +804,11 @@ export const useAppStore = defineStore('app', {
           ?? payload?.[section]
           ?? payload?.payload
           ?? payload
-        this.dashboards[instanceId] = { ...(this.dashboards[instanceId] ?? {}), [section]: value }
+        this.dashboards[instanceId] = patchDashboardSection(
+          this.dashboards[instanceId] ?? {},
+          section,
+          value,
+        )
         return
       }
 
@@ -1054,10 +1157,10 @@ export const useAppStore = defineStore('app', {
             // directly before trying to interpret it as a single-section notification.
             const fullDashboard = payload?.dashboard ?? payload?.state?.dashboard
             if (fullDashboard && typeof fullDashboard === 'object') {
-              this.dashboards[instanceId] = {
-                ...(this.dashboards[instanceId] ?? {}),
-                ...normalizeDashboardSnapshot(fullDashboard),
-              }
+              this.dashboards[instanceId] = patchDashboardMeta(
+                this.dashboards[instanceId] ?? {},
+                normalizeDashboardSnapshot(fullDashboard),
+              )
               return
             }
 
@@ -1065,8 +1168,10 @@ export const useAppStore = defineStore('app', {
             if (!section) {
               const present = dashboardSections.filter(key => Object.prototype.hasOwnProperty.call(payload ?? {}, key))
               if (present.length) {
-                const current = { ...(this.dashboards[instanceId] ?? {}) }
-                for (const key of present) current[key] = payload[key]
+                let current = this.dashboards[instanceId] ?? {}
+                for (const key of present) {
+                  current = patchDashboardSection(current, key, payload[key])
+                }
                 this.dashboards[instanceId] = current
               }
               return
@@ -1081,7 +1186,11 @@ export const useAppStore = defineStore('app', {
               ?? payload?.[section]
               ?? payload?.payload
               ?? payload
-            this.dashboards[instanceId] = { ...(this.dashboards[instanceId] ?? {}), [section]: value }
+            this.dashboards[instanceId] = patchDashboardSection(
+              this.dashboards[instanceId] ?? {},
+              section,
+              value,
+            )
             return
           }
 

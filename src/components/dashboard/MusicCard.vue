@@ -2,7 +2,7 @@
   <div class="music-card">
     <div class="music-meta">
       <div class="music-art">
-        <v-img v-if="music.thumbnail" :src="music.thumbnail" cover />
+        <v-img v-if="thumbnailSrc" :src="thumbnailSrc" cover />
         <v-icon v-else size="42">mdi-music-note</v-icon>
       </div>
       <div class="min-w-0 flex-grow-1">
@@ -46,6 +46,21 @@ import { useI18n } from '@/i18n'
 const props = defineProps<{ music:any }>()
 const emit = defineEmits<{ command:[method:string,params:any] }>()
 const { t } = useI18n()
+const thumbnailSrc = computed(() => {
+  const thumbnail = props.music?.thumbnail
+  if (!thumbnail) return ''
+  if (typeof thumbnail === 'string') return thumbnail
+  if (typeof thumbnail !== 'object') return ''
+
+  const dataUrl = thumbnail.data_url ?? thumbnail.dataUrl ?? thumbnail.url
+  if (typeof dataUrl === 'string' && dataUrl) return dataUrl
+
+  const base64 = thumbnail.base64
+  if (typeof base64 !== 'string' || !base64) return ''
+  const mime = typeof thumbnail.mime === 'string' && thumbnail.mime ? thumbnail.mime : 'image/png'
+  return `data:${mime};base64,${base64}`
+})
+
 const musicProgress = computed(() => {
   const direct = Number(props.music?.progress_percentage)
   if (Number.isFinite(direct)) return Math.max(0, Math.min(100, direct))
