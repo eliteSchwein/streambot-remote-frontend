@@ -231,3 +231,200 @@ body { margin: 0; }
   opacity:1;
   transform:scale(1.03);
 }
+
+/* Twitch user list dashboard card */
+.twitch-users-card {
+  min-width: 0;
+}
+
+.twitch-users-card__search {
+  margin-bottom: 14px;
+}
+
+.twitch-users-card__groups {
+  display: grid;
+  gap: 16px;
+}
+
+.twitch-users-card__group {
+  min-width: 0;
+}
+
+.twitch-users-card__group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 6px 6px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.twitch-users-card__user {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.twitch-users-card__user:hover,
+.twitch-users-card__user:focus-visible {
+  background: rgba(var(--v-theme-on-surface), 0.07);
+  outline: none;
+}
+
+.twitch-users-card__role-icon {
+  flex: 0 0 20px;
+  width: 20px;
+  opacity: 0.78;
+}
+
+.twitch-user-dialog__avatar {
+  flex: 0 0 auto;
+  background: rgba(var(--v-theme-primary), 0.16);
+  color: rgb(var(--v-theme-primary));
+  font-weight: 700;
+}
+
+.twitch-users-card__identity {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.twitch-users-card__display-name {
+  overflow: hidden;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.twitch-users-card__login {
+  overflow: hidden;
+  margin-top: 1px;
+  font-size: 0.76rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.62;
+}
+
+.twitch-users-card__chevron {
+  flex: 0 0 auto;
+  opacity: 0.45;
+}
+
+.twitch-users-card__lookup-empty {
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  text-align: center;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.twitch-user-dialog__profile {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.twitch-user-dialog__description {
+  margin-top: 18px;
+  white-space: pre-wrap;
+}
+
+.twitch-user-dialog__details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px;
+  margin-top: 18px;
+}
+
+.twitch-user-dialog__detail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.045);
+}
+
+.twitch-user-dialog__detail > span {
+  font-size: 0.72rem;
+  opacity: 0.62;
+}
+
+.twitch-user-dialog__detail > strong {
+  overflow-wrap: anywhere;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.twitch-user-dialog__timeout-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  gap: 10px;
+}
+
+.twitch-user-dialog__actions,
+.twitch-user-dialog__role-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 620px) {
+  .twitch-user-dialog__profile {
+    align-items: flex-start;
+  }
+
+  .twitch-user-dialog__details {
+    grid-template-columns: 1fr;
+  }
+
+  .twitch-user-dialog__timeout-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.twitch-users-card__lookup-anyway {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+}
+
+/* Twitch user info dialog */
+.twitch-user-dialog-card {
+  position: relative;
+}
+
+.twitch-user-dialog__close {
+  position: absolute !important;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+}
+
+.twitch-user-dialog {
+  padding-top: 24px !important;
+}
+

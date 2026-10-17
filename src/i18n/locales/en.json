@@ -150,7 +150,8 @@
     "rotating_scene": "Rotating scene",
     "audio": "Audio",
     "obs": "OBS",
-    "yolobox": "Yolobox"
+    "yolobox": "Yolobox",
+    "twitch_users": "Twitch users"
   },
   "pairing": {
     "title": "Pair StreamDing",
@@ -201,5 +202,37 @@
   },
   "errors": {
     "backend": "Could not connect to the remote admin backend."
+  },
+  "twitchUsers": {
+    "searchPlaceholder": "Search users or enter a Twitch username…",
+    "broadcaster": "Broadcaster",
+    "moderators": "Moderators",
+    "vips": "VIPs",
+    "users": "Users",
+    "empty": "No Twitch users available yet.",
+    "noUserFound": "No matching user in the current Twitch user list.",
+    "lookupUser": "Look up {user}",
+    "userInfo": "User info",
+    "userId": "User ID",
+    "accountCreated": "Account created",
+    "broadcasterType": "Broadcaster type",
+    "followingSince": "Following since",
+    "subscription": "Subscription",
+    "gifted": "gifted",
+    "moderation": "Moderation",
+    "timeoutDuration": "Timeout duration",
+    "reasonOptional": "Reason (optional)",
+    "timeout": "Timeout",
+    "ban": "Ban",
+    "unban": "Unban",
+    "warn": "Warn",
+    "makeModerator": "Make moderator",
+    "removeModerator": "Remove moderator",
+    "makeVip": "Make VIP",
+    "removeVip": "Remove VIP",
+    "seconds": "Seconds",
+    "minutes": "Minutes",
+    "hours": "Hours",
+    "days": "Days"
   }
 }

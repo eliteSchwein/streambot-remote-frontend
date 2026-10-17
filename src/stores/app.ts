@@ -5,7 +5,7 @@ import { applyPreferredLocale } from '@/i18n'
 export type RemoteInstance = Record<string, any> & { id: string | number }
 export type DashboardSectionName =
   | 'music' | 'giveaway' | 'interactions' | 'auto_macros' | 'macros'
-  | 'channel_points' | 'rotating_scene' | 'audio' | 'obs' | 'yolobox'
+  | 'channel_points' | 'rotating_scene' | 'audio' | 'obs' | 'yolobox' | 'twitch_users'
 export type DashboardCardConfig = { macros?: string[]; obs_connection?: string }
 export type DashboardLayoutItem = {
   id?: string
@@ -15,7 +15,7 @@ export type DashboardLayoutItem = {
   column?: number
   config?: DashboardCardConfig
 }
-export type DashboardLayoutSettings = { version: 1 | 2 | 3 | 4; sections: DashboardLayoutItem[] }
+export type DashboardLayoutSettings = { version: 1 | 2 | 3 | 4 | 5; sections: DashboardLayoutItem[] }
 export type UserSettings = {
   language: 'en' | 'de'
   dashboard_layouts?: Record<string, DashboardLayoutSettings>
@@ -31,7 +31,7 @@ export type KofiSettings = {
 
 export const dashboardSections: DashboardSectionName[] = [
   'music', 'giveaway', 'interactions', 'auto_macros', 'macros',
-  'channel_points', 'rotating_scene', 'audio', 'obs', 'yolobox',
+  'channel_points', 'rotating_scene', 'audio', 'obs', 'yolobox', 'twitch_users',
 ]
 
 export function instanceKey(instance: any): string {
@@ -325,6 +325,7 @@ const dashboardMethodSectionMap: Record<string, DashboardSectionName> = {
   notify_audio_outputs_update: 'audio',
   notify_obs_update: 'obs',
   notify_yolobox_update: 'yolobox',
+  notify_twitch_user_list: 'twitch_users',
 }
 
 function dashboardSectionForMethod(method: any): DashboardSectionName | '' {
@@ -443,7 +444,7 @@ function normalizeCloudDashboardSnapshot(value: any): DashboardSnapshot {
   // Also accept snapshots keyed by the original notify method. This keeps the
   // frontend compatible with the cloud cache representation without forcing the
   // backend to expand it into section names first.
-  const candidates = [value, value?.data, value?.updates, value?.notifications, value?.methods]
+  const candidates = [value, value?.data, value?.state, value?.dashboard, value?.snapshot, value?.updates, value?.notifications, value?.methods]
   for (const candidate of candidates) {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
     for (const [method, payload] of Object.entries(candidate)) {
@@ -472,6 +473,7 @@ export const useAppStore = defineStore('app', {
     streamers: [] as any[],
     moderators: [] as any[],
     dashboards: {} as Record<string, DashboardSnapshot>,
+    dashboardActionResults: {} as Record<string, Record<string, any>>,
     userSettings: null as UserSettings | null,
     kofiSettings: {} as Record<string, KofiSettings>,
     registration: null as StreamDingRegistration | null,
@@ -632,6 +634,7 @@ export const useAppStore = defineStore('app', {
       // UI deterministic even if the backend broadcasts the refreshed instance list first.
       this.instances = this.instances.filter(candidate => instanceKey(candidate) !== instanceId)
       delete this.dashboards[instanceId]
+      delete this.dashboardActionResults[instanceId]
       this.disconnectInstanceSocket(instanceId)
       if (this.activeDashboardId === instanceId) this.activeDashboardId = null
     },
@@ -745,6 +748,25 @@ export const useAppStore = defineStore('app', {
           return
         }
 
+        // twitch_user_info is a request/response-style local WS method. The cloud
+        // additionally mirrors the result as an update envelope. Cache it as an
+        // action result instead of merging it into the Twitch user-list section.
+        if (method === 'notify_twitch_user_info') {
+          const currentResults = { ...(this.dashboardActionResults[instanceId] ?? {}) }
+          const result = {
+            type: 'notify_dashboard_action_result',
+            section: 'twitch_users',
+            action: 'twitch_user_info',
+            success: true,
+            data: patch?.data ?? patch,
+            received_at: Date.now(),
+          }
+          currentResults.twitch_user_info = result
+          currentResults['twitch.user_info'] = result
+          this.dashboardActionResults[instanceId] = currentResults
+          return
+        }
+
         const section = dashboardSectionForMethod(method) || inferDashboardSection(message, payload)
         if (section) {
           this.dashboards[instanceId] = patchDashboardSection(
@@ -841,7 +863,28 @@ export const useAppStore = defineStore('app', {
       }
 
       if (type === 'notify_dashboard_action_result') {
-        if (payload?.success === false || payload?.error) this.error = String(payload?.error ?? 'Dashboard action failed')
+        // Action metadata lives on the outer envelope while the actual local-method
+        // result lives in `data`. Do not use messagePayload() alone here because it
+        // intentionally unwraps `data` and would discard action/section/request_id.
+        const result = {
+          ...message,
+          data: message?.data ?? payload,
+          received_at: Date.now(),
+        }
+        const actionKeys = Array.from(new Set([
+          message?.action, message?.method, message?.local_method, message?.localMethod,
+          message?.request?.action, message?.request?.method, message?.command, message?.name,
+          payload?.action, payload?.method, payload?.local_method, payload?.localMethod,
+          payload?.request?.action, payload?.request?.method, payload?.command, payload?.name,
+        ].filter(value => value !== undefined && value !== null && String(value).trim()).map(value => String(value).trim())))
+        if (actionKeys.length) {
+          const currentResults = { ...(this.dashboardActionResults[instanceId] ?? {}) }
+          for (const action of actionKeys) currentResults[action] = result
+          this.dashboardActionResults[instanceId] = currentResults
+        }
+        if (message?.success === false || payload?.success === false || message?.error || payload?.error) {
+          this.error = String(message?.error ?? payload?.error ?? 'Dashboard action failed')
+        }
         return
       }
 
@@ -1074,6 +1117,7 @@ export const useAppStore = defineStore('app', {
             if (!instanceId) return
             this.instances = this.instances.filter(instance => instanceKey(instance) !== instanceId)
             delete this.dashboards[instanceId]
+      delete this.dashboardActionResults[instanceId]
             this.disconnectInstanceSocket(instanceId)
             if (this.activeDashboardId === instanceId) this.activeDashboardId = null
             return
@@ -1084,6 +1128,7 @@ export const useAppStore = defineStore('app', {
             if (!instanceId) return
             this.instances = this.instances.filter(instance => instanceKey(instance) !== instanceId)
             delete this.dashboards[instanceId]
+      delete this.dashboardActionResults[instanceId]
             this.disconnectInstanceSocket(instanceId)
             if (this.activeDashboardId === instanceId) this.activeDashboardId = null
             return
@@ -1206,7 +1251,9 @@ export const useAppStore = defineStore('app', {
           }
 
           if (type === 'notify_dashboard_action_result') {
-            if (payload?.success === false || payload?.error) this.error = String(payload?.error ?? 'Dashboard action failed')
+            if (message?.success === false || payload?.success === false || message?.error || payload?.error) {
+              this.error = String(message?.error ?? payload?.error ?? 'Dashboard action failed')
+            }
             return
           }
 

@@ -177,6 +177,15 @@
                 <YoloboxCard :yolobox="yolobox" @command="(method,params)=>command(method,params,'yolobox')" />
               </template>
 
+              <template v-else-if="section.key === 'twitch_users'">
+                <TwitchUsersCard
+                  :user-list="twitchUsers"
+                  :user-info-result="twitchUserInfoResult"
+                  :viewer-is-owner="viewerIsOwner"
+                  @command="(method,params)=>nativeMethod(method,params,'twitch_users')"
+                />
+              </template>
+
             </v-card-text>
             </v-card>
           </template>
@@ -291,7 +300,8 @@ import ChannelPointsCard from '@/components/dashboard/ChannelPointsCard.vue'
 import RotatingSceneCard from '@/components/dashboard/RotatingSceneCard.vue'
 import AudioCard from '@/components/dashboard/AudioCard.vue'
 import YoloboxCard from '@/components/dashboard/YoloboxCard.vue'
-import { dashboardSections, instanceKey, type DashboardLayoutItem, type DashboardSectionName, useAppStore } from '@/stores/app'
+import TwitchUsersCard from '@/components/dashboard/TwitchUsersCard.vue'
+import { dashboardSections, instanceIsOwner, instanceKey, type DashboardLayoutItem, type DashboardSectionName, useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n'
 
 const route = useRoute()
@@ -301,7 +311,7 @@ const id = computed(() => String(route.params.id ?? ''))
 
 const instance = computed(() => store.instances.find((v:any) => instanceKey(v) === id.value))
 const dashboard = computed<any>(() => store.dashboards[id.value] ?? {})
-const sectionIcons = {music:'mdi-music',giveaway:'mdi-gift-outline',interactions:'mdi-timer-sand',auto_macros:'mdi-robot-outline',macros:'mdi-gesture-tap-button',channel_points:'mdi-star-circle-outline',rotating_scene:'mdi-camera-switch-outline',audio:'mdi-volume-high',obs:'mdi-video-outline',yolobox:'mdi-monitor-eye'} as Record<DashboardSectionName,string>
+const sectionIcons = {music:'mdi-music',giveaway:'mdi-gift-outline',interactions:'mdi-timer-sand',auto_macros:'mdi-robot-outline',macros:'mdi-gesture-tap-button',channel_points:'mdi-star-circle-outline',rotating_scene:'mdi-camera-switch-outline',audio:'mdi-volume-high',obs:'mdi-video-outline',yolobox:'mdi-monitor-eye',twitch_users:'mdi-twitch'} as Record<DashboardSectionName,string>
 type DashboardCard = {
   id: string
   key: DashboardSectionName
@@ -342,6 +352,7 @@ const dashboardColumns = computed(() => {
 const hiddenSections = computed(() => dashboardLayout.value.filter(section => section.key !== 'obs' && !section.visible))
 const instanceName = computed(() => instance.value?.name ?? instance.value?.hostname ?? instance.value?.display_name ?? `${t('common.instance')} ${id.value}`)
 const online = computed(() => Boolean(instance.value?.online ?? instance.value?.connected ?? instance.value?.is_connected))
+const viewerIsOwner = computed(() => instanceIsOwner(instance.value, store.me))
 const music = computed<any>(() => sectionData('music') ?? {})
 const giveaway = computed<any>(() => sectionData('giveaway') ?? {})
 const interactionItems = computed(() => toArray(sectionData('interactions')))
@@ -384,6 +395,8 @@ const addableObsCards = computed(() => {
   ])).filter(card => !visible.has(`${card.connection}:${card.panel}`))
 })
 const yolobox = computed<any>(() => sectionData('yolobox') ?? {})
+const twitchUsers = computed<any>(() => sectionData('twitch_users') ?? {})
+const twitchUserInfoResult = computed<any>(() => store.dashboardActionResults[id.value]?.twitch_user_info ?? store.dashboardActionResults[id.value]?.['twitch.user_info'] ?? null)
 function sectionData(section: DashboardSectionName){ return dashboard.value?.[section] }
 function toArray(value:any):any[]{ return Array.isArray(value) ? value : [] }
 function objectValues(value:any):any[]{ return value && typeof value === 'object' && !Array.isArray(value) ? Object.entries(value).map(([key, entry]:any) => ({ id:key, ...(entry ?? {}) })) : toArray(value) }
