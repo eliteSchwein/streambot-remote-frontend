@@ -448,6 +448,23 @@ function normalizeCloudDashboardSnapshot(value: any): DashboardSnapshot {
   for (const candidate of candidates) {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
     for (const [method, payload] of Object.entries(candidate)) {
+      // Audio is assembled from two separate notify payloads. Preserve both
+      // instead of allowing notify_audio_outputs_update (an array) to overwrite
+      // notify_audio_update (the logical interface object).
+      if (method === 'notify_audio_update') {
+        const currentAudio = isPlainObject(result.audio) ? result.audio : {}
+        result.audio = { ...currentAudio, data: payload }
+        continue
+      }
+      if (method === 'notify_audio_outputs_update') {
+        const currentAudio = isPlainObject(result.audio) ? result.audio : {}
+        result.audio = {
+          ...currentAudio,
+          outputs: Array.isArray(payload) ? payload : ((payload as any)?.outputs ?? []),
+        }
+        continue
+      }
+
       const section = dashboardSectionForMethod(method)
       if (section) result[section] = payload
     }
@@ -764,6 +781,27 @@ export const useAppStore = defineStore('app', {
           currentResults.twitch_user_info = result
           currentResults['twitch.user_info'] = result
           this.dashboardActionResults[instanceId] = currentResults
+          return
+        }
+
+        // Audio is composed from two independent local notifications. They do
+        // not share the same payload shape, so never merge either payload
+        // directly into the audio section root.
+        if (method === 'notify_audio_update') {
+          this.dashboards[instanceId] = patchDashboardSection(
+            this.dashboards[instanceId] ?? {},
+            'audio',
+            { data: patch },
+          )
+          return
+        }
+
+        if (method === 'notify_audio_outputs_update') {
+          this.dashboards[instanceId] = patchDashboardSection(
+            this.dashboards[instanceId] ?? {},
+            'audio',
+            { outputs: Array.isArray(patch) ? patch : (patch?.outputs ?? []) },
+          )
           return
         }
 
