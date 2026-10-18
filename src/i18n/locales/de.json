@@ -138,7 +138,15 @@
     "noObsAudioInputs": "Keine OBS-Audioeingänge verfügbar.",
     "noObsScenes": "Für diese OBS-Verbindung sind keine Szenen verfügbar.",
     "noSceneItems": "Keine Szenenelemente.",
-    "dropCardHere": "Karte hier ablegen"
+    "dropCardHere": "Karte hier ablegen",
+    "songRequestsEnabled": "Aktiv",
+    "songRequestsDisabled": "Inaktiv",
+    "songRequestsBusy": "Wird aktualisiert",
+    "songRequestCount": "{count} Requests",
+    "songRequestCurrent": "Aktuell",
+    "songRequestRemove": "Request entfernen",
+    "noSongRequests": "Keine Songrequests in der Warteschlange.",
+    "songRequestUnknown": "Unbekannter Songrequest"
   },
   "sections": {
     "music": "Musik",
@@ -151,7 +159,8 @@
     "audio": "Audio",
     "obs": "OBS",
     "yolobox": "Yolobox",
-    "twitch_users": "Twitch-Nutzer"
+    "twitch_users": "Twitch-Nutzer",
+    "song_requests": "Songrequests"
   },
   "pairing": {
     "title": "StreamDing koppeln",

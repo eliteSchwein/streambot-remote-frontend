@@ -186,6 +186,13 @@
                 />
               </template>
 
+              <template v-else-if="section.key === 'song_requests'">
+                <SongRequestsCard
+                  :state="songRequests"
+                  @remove="(params)=>command('music_song_request_remove',params,'music')"
+                />
+              </template>
+
             </v-card-text>
             </v-card>
           </template>
@@ -301,6 +308,7 @@ import RotatingSceneCard from '@/components/dashboard/RotatingSceneCard.vue'
 import AudioCard from '@/components/dashboard/AudioCard.vue'
 import YoloboxCard from '@/components/dashboard/YoloboxCard.vue'
 import TwitchUsersCard from '@/components/dashboard/TwitchUsersCard.vue'
+import SongRequestsCard from '@/components/dashboard/SongRequestsCard.vue'
 import { dashboardSections, instanceIsOwner, instanceKey, type DashboardLayoutItem, type DashboardSectionName, useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n'
 
@@ -311,7 +319,7 @@ const id = computed(() => String(route.params.id ?? ''))
 
 const instance = computed(() => store.instances.find((v:any) => instanceKey(v) === id.value))
 const dashboard = computed<any>(() => store.dashboards[id.value] ?? {})
-const sectionIcons = {music:'mdi-music',giveaway:'mdi-gift-outline',interactions:'mdi-timer-sand',auto_macros:'mdi-robot-outline',macros:'mdi-gesture-tap-button',channel_points:'mdi-star-circle-outline',rotating_scene:'mdi-camera-switch-outline',audio:'mdi-volume-high',obs:'mdi-video-outline',yolobox:'mdi-monitor-eye',twitch_users:'mdi-twitch'} as Record<DashboardSectionName,string>
+const sectionIcons = {music:'mdi-music',giveaway:'mdi-gift-outline',interactions:'mdi-timer-sand',auto_macros:'mdi-robot-outline',macros:'mdi-gesture-tap-button',channel_points:'mdi-star-circle-outline',rotating_scene:'mdi-camera-switch-outline',audio:'mdi-volume-high',obs:'mdi-video-outline',yolobox:'mdi-monitor-eye',twitch_users:'mdi-twitch',song_requests:'mdi-playlist-music'} as Record<DashboardSectionName,string>
 type DashboardCard = {
   id: string
   key: DashboardSectionName
@@ -397,6 +405,90 @@ const addableObsCards = computed(() => {
 })
 const yolobox = computed<any>(() => sectionData('yolobox') ?? {})
 const twitchUsers = computed<any>(() => sectionData('twitch_users') ?? {})
+const songRequests = computed<any>(() => {
+  // Cloud keeps song requests inside the canonical music state. A dedicated
+  // notify_song_request_update is normalized into music.songrequest by Pinia,
+  // while the old top-level section is accepted as a migration fallback.
+  const legacy = sectionData('song_requests') ?? {}
+  const canonical = music.value?.songrequest ?? music.value?.song_request ?? {}
+  const state = { ...(legacy && typeof legacy === 'object' ? legacy : {}), ...(canonical && typeof canonical === 'object' ? canonical : {}) }
+
+  const rawItems = Array.isArray(state.items)
+    ? state.items
+    : Array.isArray(state.queue)
+      ? state.queue
+      : Array.isArray(state.requests)
+        ? state.requests
+        : Array.isArray(state.songs)
+          ? state.songs
+          : []
+
+  const files = Array.isArray(state.files) ? state.files : []
+  const titleMap = state.title_map && typeof state.title_map === 'object' ? state.title_map : {}
+  const currentUrl = state.current_url ?? state.currentUrl ?? null
+  const currentIndex = Number.isFinite(Number(state.current_index))
+    ? Number(state.current_index)
+    : Number.isFinite(Number(state.queue_position))
+      ? Number(state.queue_position)
+      : -1
+
+  const basename = (value:any) => String(value ?? '').replace(/\\/g, '/').split('/').pop() || ''
+  const urlForFilename = (filename:any) => titleMap[basename(filename)] ?? titleMap[String(filename ?? '')] ?? undefined
+  const filenameForUrl = (url:any) => {
+    const target = String(url ?? '')
+    if (!target) return undefined
+    for (const [filename, mappedUrl] of Object.entries(titleMap)) {
+      if (String(mappedUrl ?? '') === target) return filename
+    }
+    return undefined
+  }
+
+  let items = rawItems.map((entry:any, index:number) => {
+    const item = entry && typeof entry === 'object' && !Array.isArray(entry)
+      ? { ...entry }
+      : { url: String(entry ?? '') }
+    const url = item.url ?? item.uri ?? ''
+    const filename = item.filename ?? filenameForUrl(url)
+    return {
+      ...item,
+      index: item.index ?? index,
+      url,
+      filename,
+      title: item.title ?? filename ?? url ?? undefined,
+      username: item.username ?? item.displayUserName ?? item.display_user_name ?? item.requested_by ?? item.requestedBy ?? item.requester ?? item.user ?? null,
+      requested_at: item.requested_at ?? item.requestedAt ?? item.created_at ?? item.createdAt ?? null,
+      current: item.current ?? (currentUrl ? String(url) === String(currentUrl) : index === currentIndex),
+    }
+  })
+
+  // Older MusicHelper state exposes the downloaded request cache as `files`
+  // and maps filename -> request URL in `title_map`. If the queue itself was
+  // stripped/not forwarded by cloud, use that cache as the visible list.
+  if (!items.length && files.length) {
+    items = files.map((file:any, index:number) => {
+      const filename = basename(file)
+      const url = urlForFilename(file)
+      return {
+        index,
+        filename,
+        url,
+        title: filename || url || String(t('instance.songRequestUnknown')),
+        current: currentUrl ? String(url ?? '') === String(currentUrl) : index === currentIndex,
+      }
+    })
+  }
+
+  return {
+    ...state,
+    items,
+    total: Number.isFinite(Number(state.total))
+      ? Number(state.total)
+      : Number.isFinite(Number(state.queue_length)) && Number(state.queue_length) > 0
+        ? Number(state.queue_length)
+        : items.length,
+    current_index: currentIndex,
+  }
+})
 const twitchUserInfoResult = computed<any>(() => store.dashboardActionResults[id.value]?.twitch_user_info ?? store.dashboardActionResults[id.value]?.['twitch.user_info'] ?? null)
 function sectionData(section: DashboardSectionName){ return dashboard.value?.[section] }
 function toArray(value:any):any[]{ return Array.isArray(value) ? value : [] }
@@ -514,7 +606,7 @@ function saveDashboardLayout(){
   const generation = ++layoutSaveGeneration
   layoutSaveTimer = setTimeout(async () => {
     const layouts = { ...(store.userSettings?.dashboard_layouts ?? {}) }
-    layouts[id.value] = { version: 5, sections: serializedDashboardLayout() }
+    layouts[id.value] = { version: 6, sections: serializedDashboardLayout() }
     try {
       await store.updateUserSettings({ dashboard_layouts: layouts })
     } catch (error:any) {

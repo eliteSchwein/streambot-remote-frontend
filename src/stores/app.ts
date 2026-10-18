@@ -5,7 +5,7 @@ import { applyPreferredLocale } from '@/i18n'
 export type RemoteInstance = Record<string, any> & { id: string | number }
 export type DashboardSectionName =
   | 'music' | 'giveaway' | 'interactions' | 'auto_macros' | 'macros'
-  | 'channel_points' | 'rotating_scene' | 'audio' | 'obs' | 'yolobox' | 'twitch_users'
+  | 'channel_points' | 'rotating_scene' | 'audio' | 'obs' | 'yolobox' | 'twitch_users' | 'song_requests'
 export type DashboardCardConfig = { macros?: string[]; obs_connection?: string }
 export type DashboardLayoutItem = {
   id?: string
@@ -15,7 +15,7 @@ export type DashboardLayoutItem = {
   column?: number
   config?: DashboardCardConfig
 }
-export type DashboardLayoutSettings = { version: 1 | 2 | 3 | 4 | 5; sections: DashboardLayoutItem[] }
+export type DashboardLayoutSettings = { version: 1 | 2 | 3 | 4 | 5 | 6; sections: DashboardLayoutItem[] }
 export type UserSettings = {
   language: 'en' | 'de'
   dashboard_layouts?: Record<string, DashboardLayoutSettings>
@@ -31,7 +31,7 @@ export type KofiSettings = {
 
 export const dashboardSections: DashboardSectionName[] = [
   'music', 'giveaway', 'interactions', 'auto_macros', 'macros',
-  'channel_points', 'rotating_scene', 'audio', 'obs', 'yolobox', 'twitch_users',
+  'channel_points', 'rotating_scene', 'audio', 'obs', 'yolobox', 'twitch_users', 'song_requests',
 ]
 
 export function instanceKey(instance: any): string {
@@ -326,6 +326,7 @@ const dashboardMethodSectionMap: Record<string, DashboardSectionName> = {
   notify_obs_update: 'obs',
   notify_yolobox_update: 'yolobox',
   notify_twitch_user_list: 'twitch_users',
+  notify_song_request_update: 'song_requests',
 }
 
 function dashboardSectionForMethod(method: any): DashboardSectionName | '' {
@@ -399,6 +400,72 @@ function normalizeMacroSectionPayload(value: any): any {
 
 function normalizeChannelPointSectionPayload(value: any): any {
   return value?.channel_points ?? value?.channelPoints ?? value?.data?.channel_points ?? value?.data?.channelPoints ?? value
+}
+
+function normalizeSongRequestSectionPayload(value: any): any {
+  const raw = value?.songrequest
+    ?? value?.song_request
+    ?? value?.song_requests
+    ?? value?.songRequests
+    ?? value?.data?.songrequest
+    ?? value?.data?.song_request
+    ?? value?.data?.song_requests
+    ?? value?.data?.songRequests
+    ?? value
+
+  if (!isPlainObject(raw)) return raw
+
+  const currentIndex = Number.isFinite(Number(raw.current_index))
+    ? Number(raw.current_index)
+    : Number.isFinite(Number(raw.queue_position))
+      ? Number(raw.queue_position)
+      : -1
+
+  const currentUrl = raw.current_url ?? raw.currentUrl ?? null
+  const queue = Array.isArray(raw.items)
+    ? raw.items
+    : Array.isArray(raw.queue)
+      ? raw.queue
+      : Array.isArray(raw.requests)
+        ? raw.requests
+        : Array.isArray(raw.songs)
+          ? raw.songs
+          : []
+
+  const normalizedItems = queue.map((entry: any, index: number) => {
+    const item = isPlainObject(entry) ? { ...entry } : { url: String(entry ?? '') }
+    const url = item.url ?? item.uri ?? ''
+    const username = item.username
+      ?? item.displayUserName
+      ?? item.display_user_name
+      ?? item.requested_by
+      ?? item.requestedBy
+      ?? item.requester
+      ?? item.user
+      ?? null
+    const requestedAt = item.requested_at ?? item.requestedAt ?? item.created_at ?? item.createdAt ?? null
+
+    return {
+      ...item,
+      id: item.id ?? item.request_id ?? item.requestId ?? null,
+      index: item.index ?? index,
+      url,
+      username,
+      requested_at: requestedAt,
+      current: item.current ?? (currentUrl ? String(url) === String(currentUrl) : index === currentIndex),
+    }
+  })
+
+  return {
+    ...raw,
+    items: normalizedItems,
+    current_index: currentIndex,
+    total: Number.isFinite(Number(raw.total))
+      ? Number(raw.total)
+      : Number.isFinite(Number(raw.queue_length))
+        ? Number(raw.queue_length)
+        : normalizedItems.length,
+  }
 }
 
 function musicTrackIdentity(value: any): string {
@@ -502,6 +569,12 @@ function normalizeCloudDashboardSnapshot(value: any): DashboardSnapshot {
         result.channel_points = normalizeChannelPointSectionPayload(payload)
         continue
       }
+      if (section === 'song_requests') {
+        const songrequest = normalizeSongRequestSectionPayload(payload)
+        const currentMusic = isPlainObject(result.music) ? result.music : {}
+        result.music = { ...currentMusic, songrequest: mergeDashboardState(currentMusic.songrequest, songrequest) }
+        continue
+      }
       if (section) result[section] = payload
     }
   }
@@ -511,6 +584,17 @@ function normalizeCloudDashboardSnapshot(value: any): DashboardSnapshot {
   // and defensively remove entries explicitly hidden from cloud.
   if (result.macros !== undefined) result.macros = normalizeMacroSectionPayload(result.macros)
   if (result.channel_points !== undefined) result.channel_points = normalizeChannelPointSectionPayload(result.channel_points)
+  if (result.song_requests !== undefined) {
+    const currentMusic = isPlainObject(result.music) ? result.music : {}
+    result.music = {
+      ...currentMusic,
+      songrequest: mergeDashboardState(
+        currentMusic.songrequest,
+        normalizeSongRequestSectionPayload(result.song_requests),
+      ),
+    }
+    delete result.song_requests
+  }
 
   // Metadata is intentionally not a dashboard card, but it is kept beside the
   // sections because the rest of the UI already reads it from there.
@@ -865,6 +949,15 @@ export const useAppStore = defineStore('app', {
           return
         }
 
+        if (method === 'notify_song_request_update') {
+          this.dashboards[instanceId] = patchDashboardSection(
+            this.dashboards[instanceId] ?? {},
+            'music',
+            { songrequest: normalizeSongRequestSectionPayload(patch) },
+          )
+          return
+        }
+
         const section = dashboardSectionForMethod(method) || inferDashboardSection(message, payload)
         if (section) {
           this.dashboards[instanceId] = patchDashboardSection(
@@ -928,12 +1021,22 @@ export const useAppStore = defineStore('app', {
           ? normalizeMacroSectionPayload(value)
           : section === 'channel_points'
             ? normalizeChannelPointSectionPayload(value)
-            : value
-        this.dashboards[instanceId] = patchDashboardSection(
-          this.dashboards[instanceId] ?? {},
-          section,
-          normalizedValue,
-        )
+            : section === 'song_requests'
+              ? normalizeSongRequestSectionPayload(value)
+              : value
+        if (section === 'song_requests') {
+          this.dashboards[instanceId] = patchDashboardSection(
+            this.dashboards[instanceId] ?? {},
+            'music',
+            { songrequest: normalizedValue },
+          )
+        } else {
+          this.dashboards[instanceId] = patchDashboardSection(
+            this.dashboards[instanceId] ?? {},
+            section,
+            normalizedValue,
+          )
+        }
         return
       }
 
