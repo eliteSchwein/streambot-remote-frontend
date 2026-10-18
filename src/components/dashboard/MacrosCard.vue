@@ -1,8 +1,20 @@
 <template>
   <div>
     <div v-if="items.length" class="macro-grid">
-      <button v-for="item in items" :key="itemKey(item)" type="button" class="macro-tile" :title="itemLabel(item)" @click="emit('command','macro.run',{macro:item.name ?? item.id})">
-        <span class="macro-tile__icon"><v-icon size="18">mdi-play</v-icon></span><span class="macro-tile__label">{{ itemLabel(item) }}</span><v-icon class="macro-tile__launch" size="16">mdi-chevron-right</v-icon>
+      <button
+        v-for="item in items"
+        :key="itemKey(item)"
+        type="button"
+        class="macro-tile"
+        :title="item.description ? `${itemLabel(item)} — ${item.description}` : itemLabel(item)"
+        @click="emit('command','macro.run',{macro:item.name ?? item.id})"
+      >
+        <span class="macro-tile__icon"><v-icon size="18">mdi-play</v-icon></span>
+        <span class="macro-tile__text">
+          <span class="macro-tile__label">{{ itemLabel(item) }}</span>
+          <span v-if="item.description" class="macro-tile__description">{{ item.description }}</span>
+        </span>
+        <v-icon class="macro-tile__launch" size="16">mdi-chevron-right</v-icon>
       </button>
     </div>
     <div v-else class="empty-state">{{ editLayout ? t('instance.chooseMacros') : t('instance.emptySection') }}</div>

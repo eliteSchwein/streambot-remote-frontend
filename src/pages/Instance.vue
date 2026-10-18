@@ -359,6 +359,7 @@ const interactionItems = computed(() => toArray(sectionData('interactions')))
 const autoMacroItems = computed(() => toArray(sectionData('auto_macros')))
 const hiddenMacroPrefixes = ['channel_point_', 'command_', 'event_'] as const
 const macroItems = computed(() => objectValues(sectionData('macros')).filter(item => {
+  if (item?.hide_from_cloud === true || item?.hideFromCloud === true) return false
   const name = itemLabel(item).trim().toLowerCase()
   return !hiddenMacroPrefixes.some(prefix => name.startsWith(prefix))
 }))

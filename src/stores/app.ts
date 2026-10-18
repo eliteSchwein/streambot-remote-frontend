@@ -373,6 +373,34 @@ function mergeDashboardState(current: any, patch: any): any {
   return result
 }
 
+
+function normalizeMacroSectionPayload(value: any): any {
+  const raw = value?.macros ?? value?.data?.macros ?? value
+
+  if (Array.isArray(raw)) {
+    return raw
+      .filter(item => item && item.hide_from_cloud !== true && item.hideFromCloud !== true)
+      .map(item => ({ ...item }))
+  }
+
+  if (!isPlainObject(raw)) return raw
+
+  const result: Record<string, any> = {}
+  for (const [name, entry] of Object.entries(raw)) {
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      if ((entry as any).hide_from_cloud === true || (entry as any).hideFromCloud === true) continue
+      result[name] = { ...(entry as any), name: (entry as any).name ?? name }
+      continue
+    }
+    result[name] = entry
+  }
+  return result
+}
+
+function normalizeChannelPointSectionPayload(value: any): any {
+  return value?.channel_points ?? value?.channelPoints ?? value?.data?.channel_points ?? value?.data?.channelPoints ?? value
+}
+
 function musicTrackIdentity(value: any): string {
   if (!value || typeof value !== 'object') return ''
   const track = value.track && typeof value.track === 'object' ? value.track : {}
@@ -466,9 +494,23 @@ function normalizeCloudDashboardSnapshot(value: any): DashboardSnapshot {
       }
 
       const section = dashboardSectionForMethod(method)
+      if (section === 'macros') {
+        result.macros = normalizeMacroSectionPayload(payload)
+        continue
+      }
+      if (section === 'channel_points') {
+        result.channel_points = normalizeChannelPointSectionPayload(payload)
+        continue
+      }
       if (section) result[section] = payload
     }
   }
+
+  // MacroHelper now emits notify_macro_update as { macros: {...} }. Keep the
+  // macro map itself in dashboard.macros, preserve metadata such as description,
+  // and defensively remove entries explicitly hidden from cloud.
+  if (result.macros !== undefined) result.macros = normalizeMacroSectionPayload(result.macros)
+  if (result.channel_points !== undefined) result.channel_points = normalizeChannelPointSectionPayload(result.channel_points)
 
   // Metadata is intentionally not a dashboard card, but it is kept beside the
   // sections because the rest of the UI already reads it from there.
@@ -805,6 +847,24 @@ export const useAppStore = defineStore('app', {
           return
         }
 
+        if (method === 'notify_macro_update' || method === 'notify_macros_update') {
+          this.dashboards[instanceId] = patchDashboardSection(
+            this.dashboards[instanceId] ?? {},
+            'macros',
+            normalizeMacroSectionPayload(patch),
+          )
+          return
+        }
+
+        if (method === 'notify_channel_point_update' || method === 'notify_channel_points_update') {
+          this.dashboards[instanceId] = patchDashboardSection(
+            this.dashboards[instanceId] ?? {},
+            'channel_points',
+            normalizeChannelPointSectionPayload(patch),
+          )
+          return
+        }
+
         const section = dashboardSectionForMethod(method) || inferDashboardSection(message, payload)
         if (section) {
           this.dashboards[instanceId] = patchDashboardSection(
@@ -864,10 +924,15 @@ export const useAppStore = defineStore('app', {
           ?? payload?.[section]
           ?? payload?.payload
           ?? payload
+        const normalizedValue = section === 'macros'
+          ? normalizeMacroSectionPayload(value)
+          : section === 'channel_points'
+            ? normalizeChannelPointSectionPayload(value)
+            : value
         this.dashboards[instanceId] = patchDashboardSection(
           this.dashboards[instanceId] ?? {},
           section,
-          value,
+          normalizedValue,
         )
         return
       }
