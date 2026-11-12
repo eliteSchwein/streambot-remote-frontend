@@ -183,6 +183,23 @@ function toggleAudio(source: any) {
   audioOpen.value = next
 }
 
+// Declared before the immediate watcher below, which reads it during setup.
+// Scene that was clicked and is waiting for OBS to confirm the switch.
+const switchingKey = ref('')
+let switchingTimer: ReturnType<typeof setTimeout> | undefined
+// Backend flag (shared by all panels, incl. switches from OBS/local) or the
+// local click until the backend confirms.
+function isSwitching(scene: any) {
+  if (scene?.switching === true) return true
+  return Boolean(switchingKey.value) && !isActiveScene(scene) && sceneKey(scene) === switchingKey.value
+}
+function clearSwitching() {
+  switchingKey.value = ''
+  if (switchingTimer) clearTimeout(switchingTimer)
+  switchingTimer = undefined
+}
+onBeforeUnmount(clearSwitching)
+
 // When the live scene changes, the new one opens and the old one closes
 // (scenes opened manually stay open).
 let previousActiveKeys = new Set<string>()
@@ -261,21 +278,6 @@ function sourceIcon(source: any) {
   if (kind.includes('color')) return 'mdi-palette-outline'
   return 'mdi-source-branch'
 }
-// Scene that was clicked and is waiting for OBS to confirm the switch.
-const switchingKey = ref('')
-let switchingTimer: ReturnType<typeof setTimeout> | undefined
-// Backend flag (shared by all panels, incl. switches from OBS/local) or the
-// local click until the backend confirms.
-function isSwitching(scene: any) {
-  if (scene?.switching === true) return true
-  return Boolean(switchingKey.value) && !isActiveScene(scene) && sceneKey(scene) === switchingKey.value
-}
-function clearSwitching() {
-  switchingKey.value = ''
-  if (switchingTimer) clearTimeout(switchingTimer)
-  switchingTimer = undefined
-}
-onBeforeUnmount(clearSwitching)
 
 function switchScene(scene: any) {
   // Show the switch immediately; cleared once OBS reports the new live

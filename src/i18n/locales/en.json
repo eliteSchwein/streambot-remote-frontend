@@ -137,6 +137,8 @@
     "obsSwitchTo": "Switch to",
     "obsSwitching": "Switching…",
     "obsLive": "Live",
+    "audioPerLink": "Per link control",
+    "audioNoLinks": "Not linked to any output.",
     "noObsAudioInputs": "No OBS audio inputs available.",
     "obsAudioBalance": "Balance",
     "obsAudio": "Audio",
