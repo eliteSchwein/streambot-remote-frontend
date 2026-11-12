@@ -23,5 +23,12 @@ const { t } = useI18n()
 function itemKey(item:any){ return String(item?.id ?? item?.uuid ?? item?.name ?? item?.label ?? JSON.stringify(item)) }
 function itemLabel(item:any){ return String(item?.label ?? item?.name ?? item?.title ?? item?.display_name ?? item?.id ?? t('common.item')) }
 function formatSeconds(value:any){ const total=Math.max(0,Math.round(Number(value)||0)); const h=Math.floor(total/3600); const m=Math.floor((total%3600)/60); const sec=total%60; if(h) return `${h}h ${m}m`; if(m) return `${m}m ${sec}s`; return `${sec}s` }
-function autoMacroProgress(item:any){ const interval=Number(item?.interval ?? 0), current=Number(item?.current_interval ?? 0); return interval>0 ? Math.max(0,Math.min(100,(100/interval)*current)) : 0 }
+// While a temporary interval is active the backend counts down from it, so it
+// has to be the reference instead of the configured interval.
+function autoMacroProgress(item:any){
+  const temporary=Number(item?.temporary_interval_ms)
+  const interval=Number.isFinite(temporary) && temporary>0 ? temporary : Number(item?.interval_ms ?? Number(item?.interval ?? 0)*1000)
+  const current=Number(item?.current_interval_ms ?? Number(item?.current_interval ?? 0)*1000)
+  return interval>0 ? Math.max(0,Math.min(100,(100/interval)*current)) : 0
+}
 </script>
