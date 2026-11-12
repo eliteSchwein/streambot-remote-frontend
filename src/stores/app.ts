@@ -505,6 +505,18 @@ function normalizeMusicPatch(currentMusic: any, patch: any): any {
   return patch
 }
 
+// True for a patch shaped like the whole audio section ({data, outputs,
+// presets}) instead of the audio channel map ({alert: {...}, tts: {...}}).
+function isAudioSectionPatch(patch: any): boolean {
+  if (!isPlainObject(patch)) return false
+  const sectionKeys = ['data', 'outputs', 'presets']
+  if (!Object.keys(patch).some(key => sectionKeys.includes(key))) return false
+  // A channel entry carries volume/routing fields.
+  const looksLikeChannel = (value: any) => isPlainObject(value)
+    && ('current_volume' in value || 'pipewire_sink' in value || 'linked_outputs' in value || 'muted' in value)
+  return !Object.values(patch).some(looksLikeChannel)
+}
+
 function patchDashboardSection(
   dashboard: DashboardSnapshot,
   section: DashboardSectionName,
@@ -917,7 +929,10 @@ export const useAppStore = defineStore('app', {
           this.dashboards[instanceId] = patchDashboardSection(
             this.dashboards[instanceId] ?? {},
             'audio',
-            { data: patch },
+            // Older cloud backends sent snapshot changes of the whole audio
+            // section ({data, outputs}) under this method; merge those into
+            // the section root instead of showing "data"/"outputs" as channels.
+            isAudioSectionPatch(patch) ? patch : { data: patch },
           )
           return
         }
