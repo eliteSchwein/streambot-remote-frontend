@@ -178,14 +178,6 @@ body { margin: 0; }
   }
 }
 
-/* components/remote/ObsScenesCard.vue */
-.obs-scenes-control{min-width:0;container-type:inline-size}.canvas-block+.canvas-block{margin-top:16px}.canvas-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 2px 8px}.scene-list{display:grid;gap:9px}.scene-card{border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;background:rgba(0,0,0,.08)}.scene-card--active{border-color:rgba(var(--v-theme-primary),.5);box-shadow:inset 3px 0 0 rgb(var(--v-theme-primary))}.scene-card__header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;min-width:0;padding:8px 8px 8px 10px}.scene-card__expand{appearance:none;border:0;background:transparent;color:inherit;display:flex;align-items:center;gap:8px;min-width:0;width:100%;text-align:left;cursor:pointer;padding:2px}.scene-card__name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.scene-card__actions{display:flex;align-items:center;justify-content:flex-end;gap:4px;min-width:0}.scene-card__switch{flex:none;white-space:nowrap;min-width:0}.source-tree{border-top:1px solid rgba(255,255,255,.06);padding:5px 0}.source-row{display:grid;grid-template-columns:calc(var(--depth) * 18px) 24px minmax(0,1fr) 48px;align-items:center;gap:8px;min-height:38px;padding:2px 8px}.source-row:hover{background:rgba(255,255,255,.035)}.source-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.source-toggle{justify-self:end}.source-icon{opacity:.8}
-@container(max-width:520px){.scene-card__header{grid-template-columns:1fr;align-items:start}.scene-card__actions{width:100%;justify-content:flex-end;padding-left:30px}.source-row{grid-template-columns:calc(var(--depth) * 12px) 22px minmax(0,1fr) 46px}}
-@container(max-width:360px){.scene-card__actions{padding-left:0}.scene-card__switch{flex:1}.scene-card__switch .v-btn__content{justify-content:center}}
-
-/* components/remote/ObsAudioMixerCard.vue */
-.obs-audio-control{min-width:0}.audio-list{display:flex;flex-direction:column}.obs-audio-row{padding:12px 2px}.obs-audio-row+.obs-audio-row{border-top:1px solid rgba(var(--v-border-color),var(--v-border-opacity))}
-
 /* components/remote/RemoteAudioControl.vue */
 .audio-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
 .output-actions{display:grid;grid-template-columns:42px minmax(120px,170px) 36px;align-items:center;gap:8px}
