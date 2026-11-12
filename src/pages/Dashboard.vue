@@ -23,13 +23,35 @@
             :key="instanceKey(instance)"
             :to="`/instances/${encodeURIComponent(instanceKey(instance))}`"
             :title="instanceName(instance)"
-            :subtitle="instanceSubtitle(instance)"
           >
+            <v-list-item-subtitle>
+              <template v-if="instanceBooting(instance)">
+                {{ t('instance.bootup.title') }} · {{ bootupStageLabel(t, instance.bootup) }}
+                <span v-if="instance.bootup?.total" class="text-medium-emphasis">
+                  · {{ t('instance.bootup.step', { step: instance.bootup.step ?? 0, total: instance.bootup.total }) }}
+                </span>
+              </template>
+              <template v-else>{{ instanceSubtitle(instance) }}</template>
+            </v-list-item-subtitle>
+
+            <!-- Boot progress of the local backend. -->
+            <v-expand-transition>
+              <v-progress-linear
+                v-if="instanceBooting(instance)"
+                :model-value="bootupPercent(instance.bootup)"
+                :indeterminate="!instance.bootup?.total"
+                color="primary"
+                height="4"
+                rounded
+                class="mt-2"
+              />
+            </v-expand-transition>
             <template #prepend>
-              <v-icon :color="instanceOnline(instance) ? 'success' : undefined">{{ instanceOnline(instance) ? 'mdi-lan-connect' : 'mdi-lan-disconnect' }}</v-icon>
+              <v-icon :color="instanceBooting(instance) ? 'primary' : (instanceOnline(instance) ? 'success' : undefined)">{{ instanceBooting(instance) ? 'mdi-rocket-launch-outline' : (instanceOnline(instance) ? 'mdi-lan-connect' : 'mdi-lan-disconnect') }}</v-icon>
             </template>
             <template #append>
-              <v-chip size="small" :color="instanceOnline(instance) ? 'success' : undefined" variant="tonal">{{ instanceOnline(instance) ? t('common.online') : t('common.offline') }}</v-chip>
+              <v-chip v-if="instanceBooting(instance)" size="small" color="primary" variant="tonal">{{ Math.round(bootupPercent(instance.bootup)) }}%</v-chip>
+              <v-chip v-else size="small" :color="instanceOnline(instance) ? 'success' : undefined" variant="tonal">{{ instanceOnline(instance) ? t('common.online') : t('common.offline') }}</v-chip>
             </template>
           </v-list-item>
         </v-list>
@@ -44,6 +66,7 @@ import PageShell from '@/components/PageShell.vue'
 import StatusCard from '@/components/StatusCard.vue'
 import { instanceKey, useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n'
+import { bootupPercent, bootupStageLabel, isBooting } from '@/utils/bootup'
 
 const store = useAppStore()
 const { t, formatDateTime } = useI18n()
@@ -53,6 +76,7 @@ const instanceStatus = computed(() => store.instances.length ? t('dashboard.onli
 
 function instanceName(instance: any) { return instance?.name ?? instance?.hostname ?? instance?.display_name ?? `${t('common.instance')} ${instanceKey(instance)}` }
 function instanceOnline(instance: any) { return Boolean(instance?.online ?? instance?.connected ?? instance?.is_connected) }
+function instanceBooting(instance: any) { return instanceOnline(instance) && isBooting(instance?.bootup) }
 function instanceSubtitle(instance: any) {
   if (instance?.channel_display_name) return instance.channel_display_name
   if (instance?.channel_login) return `@${instance.channel_login}`

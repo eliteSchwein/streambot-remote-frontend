@@ -6,6 +6,8 @@ export type RemoteInstance = Record<string, any> & { id: string | number }
 export type DashboardSectionName =
   | 'music' | 'giveaway' | 'interactions' | 'auto_macros' | 'macros'
   | 'channel_points' | 'rotating_scene' | 'audio' | 'obs' | 'yolobox' | 'twitch_users' | 'song_requests'
+  // Not a card: boot progress of the local backend (notify_bootup_stage).
+  | 'bootup'
 export type DashboardCardConfig = { macros?: string[]; obs_connection?: string }
 export type DashboardLayoutItem = {
   id?: string
@@ -327,6 +329,7 @@ const dashboardMethodSectionMap: Record<string, DashboardSectionName> = {
   notify_yolobox_update: 'yolobox',
   notify_twitch_user_list: 'twitch_users',
   notify_song_request_update: 'song_requests',
+  notify_bootup_stage: 'bootup',
 }
 
 function dashboardSectionForMethod(method: any): DashboardSectionName | '' {
@@ -1352,6 +1355,19 @@ export const useAppStore = defineStore('app', {
       delete this.dashboardActionResults[instanceId]
             this.disconnectInstanceSocket(instanceId)
             if (this.activeDashboardId === instanceId) this.activeDashboardId = null
+            return
+          }
+
+          // Boot progress for the instance list (dashboard), sent to everyone
+          // who sees the instance, not only to open instance pages.
+          if (type === 'notify_instance_bootup') {
+            const instanceId = messageInstanceId(message) || instanceKey(payload?.instance ?? payload)
+            if (!instanceId) return
+            const bootup = payload?.bootup ?? null
+            this.instances = this.instances.map(instance => {
+              if (instanceKey(instance) !== instanceId) return instance
+              return { ...instance, bootup, id: instanceId }
+            })
             return
           }
 

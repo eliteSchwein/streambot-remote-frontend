@@ -420,3 +420,7 @@ body { margin: 0; }
   padding-top: 24px !important;
 }
 
+
+/* pages/Instance.vue: read-only dashboard while the local backend boots */
+.dashboard-board{transition:opacity .3s ease,filter .3s ease}
+.dashboard-board--booting{opacity:.45;filter:grayscale(.6);pointer-events:none;user-select:none}

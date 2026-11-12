@@ -152,7 +152,42 @@
     "songRequestCurrent": "Aktuell",
     "songRequestRemove": "Request entfernen",
     "noSongRequests": "Keine Songrequests in der Warteschlange.",
-    "songRequestUnknown": "Unbekannter Songrequest"
+    "songRequestUnknown": "Unbekannter Songrequest",
+    "bootup": {
+      "title": "System wird gestartet",
+      "step": "Schritt {step} von {total}",
+      "stages": {
+        "unknown": "Unbekannt",
+        "loading_cache": "Cache wird geladen…",
+        "loading_variables": "Variablen werden geladen…",
+        "loading_web_components": "Web-Komponenten werden geladen…",
+        "loading_integrations": "Lade Integrationen…",
+        "starting_ollama": "Ollama wird gestartet…",
+        "loading_system_components": "Systemkomponenten werden geladen…",
+        "starting_twitch_bot": "Twitch-Bot wird gestartet…",
+        "connecting_obs": "Verbindung zu OBS wird hergestellt…",
+        "connecting_yolobox": "Verbindung zur YoloBox wird hergestellt…",
+        "fetching_game_info": "Spielinformationen werden geladen…",
+        "starting_schedulers": "Scheduler werden gestartet…",
+        "initializing_macros": "Makros werden initialisiert…",
+        "sending_default_wled_colors": "WLED-Standardfarben werden gesetzt…",
+        "starting_audio": "Audio wird gestartet…",
+        "updating_system_information": "Systeminformationen werden aktualisiert…",
+        "reading_assets_folder": "Asset-Ordner wird eingelesen…",
+        "starting_watchers": "Watcher werden gestartet…",
+        "starting_gpio": "GPIO wird gestartet…",
+        "starting_neopixel": "NeoPixel wird gestartet…",
+        "starting_tts": "TTS wird gestartet…",
+        "updating_obs_filters": "OBS-Filter werden aktualisiert…",
+        "starting_auto_macros": "Auto-Makros werden gestartet…",
+        "loading_scene_rotations": "Szenenwechselen werden geladen…",
+        "starting_music_player": "Musikplayer wird gestartet…",
+        "updating_event_index": "Event-Index wird aktualisiert…",
+        "finished": "Fertig",
+        "loading_web_content": "Web-Inhalte werden geladen…",
+        "loading_tts_voices": "TTS-Stimmen werden geladen…"
+      }
+    }
   },
   "sections": {
     "music": "Musik",

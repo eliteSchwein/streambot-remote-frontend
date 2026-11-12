@@ -16,6 +16,7 @@
         :prepend-icon="editLayout ? 'mdi-check' : 'mdi-view-dashboard-edit-outline'"
         :color="editLayout ? 'primary' : undefined"
         :variant="editLayout ? 'flat' : 'tonal'"
+        :disabled="isBooting"
         @click="editLayout = !editLayout"
       >
         {{ editLayout ? t('instance.finishEditing') : t('instance.editDashboard') }}
@@ -25,13 +26,43 @@
 
     <v-alert v-if="!instance" type="warning" variant="tonal" class="mb-4">{{ t('instance.unavailable') }}</v-alert>
 
+    <!-- Boot progress of the local backend while it is starting. -->
+    <v-expand-transition>
+      <v-alert
+        v-if="instance && isBooting"
+        type="info"
+        variant="tonal"
+        icon="mdi-rocket-launch-outline"
+        class="mb-4"
+      >
+        <div class="d-flex align-center flex-wrap ga-2">
+          <strong>{{ t('instance.bootup.title') }}</strong>
+          <span>· {{ bootupStageLabel }}</span>
+          <v-spacer />
+          <span v-if="bootupTotal > 0" class="text-caption text-medium-emphasis">
+            {{ t('instance.bootup.step', { step: bootupStep, total: bootupTotal }) }}
+          </span>
+        </div>
+        <v-progress-linear
+          :model-value="bootupPercent"
+          :indeterminate="bootupTotal === 0"
+          color="primary"
+          height="6"
+          rounded
+          class="mt-2"
+        />
+      </v-alert>
+    </v-expand-transition>
+
     <template v-if="instance">
       <div
         v-if="visibleSections.length || editLayout"
         ref="dashboardBoard"
         class="dashboard-board"
-        :class="{ 'dashboard-board--editing': editLayout }"
+        :class="{ 'dashboard-board--editing': editLayout, 'dashboard-board--booting': isBooting }"
         :style="{ '--dashboard-columns': dashboardColumnCount }"
+        :inert="isBooting || undefined"
+        :aria-busy="isBooting || undefined"
       >
         <div
           v-for="(column, columnIndex) in dashboardColumns"
@@ -294,6 +325,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { bootupPercent as getBootupPercent, bootupStageLabel as getBootupStageLabel } from '@/utils/bootup'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import PageShell from '@/components/PageShell.vue'
 import ObsScenesCard from '@/components/dashboard/ObsScenesCard.vue'
@@ -360,6 +392,16 @@ const dashboardColumns = computed(() => {
 const hiddenSections = computed(() => dashboardLayout.value.filter(section => section.key !== 'obs' && !section.visible))
 const instanceName = computed(() => instance.value?.name ?? instance.value?.hostname ?? instance.value?.display_name ?? `${t('common.instance')} ${id.value}`)
 const online = computed(() => Boolean(instance.value?.online ?? instance.value?.connected ?? instance.value?.is_connected))
+
+// Boot progress (notify_bootup_stage) of the local backend.
+const bootup = computed<any>(() => sectionData('bootup') ?? null)
+// While the local backend boots, the dashboard is read-only (no inputs).
+const isBooting = computed(() => online.value && bootup.value?.ready === false)
+watch(isBooting, (booting) => { if (booting) editLayout.value = false })
+const bootupStep = computed(() => Math.max(0, Number(bootup.value?.step ?? 0)))
+const bootupTotal = computed(() => Math.max(0, Number(bootup.value?.total ?? 0)))
+const bootupPercent = computed(() => getBootupPercent(bootup.value))
+const bootupStageLabel = computed(() => getBootupStageLabel(t, bootup.value))
 const viewerIsOwner = computed(() => instanceIsOwner(instance.value, store.me))
 const music = computed<any>(() => sectionData('music') ?? {})
 const giveaway = computed<any>(() => sectionData('giveaway') ?? {})
@@ -836,11 +878,11 @@ watch(id, (newId, oldId) => {
 watch(() => store.userSettings?.dashboard_layouts?.[id.value], () => loadDashboardLayout(), { deep: true })
 
 async function command(method:string, params:any={}, section?:DashboardSectionName){
-  if (!online.value) return
+  if (!online.value || isBooting.value) return
   try{ await store.streamdingCommand(id.value,method,params,section) } catch(e:any){ store.error=e?.message ?? t('instance.actionError') }
 }
 async function nativeMethod(method:string, params:any={}, section?:DashboardSectionName){
-  if (!online.value) return
+  if (!online.value || isBooting.value) return
   try{ await store.streamdingMethod(id.value,method,params,section) } catch(e:any){ store.error=e?.message ?? t('instance.actionError') }
 }
 function updateDashboardColumns(){

@@ -152,7 +152,42 @@
     "songRequestCurrent": "Current",
     "songRequestRemove": "Remove request",
     "noSongRequests": "No song requests are queued.",
-    "songRequestUnknown": "Unknown song request"
+    "songRequestUnknown": "Unknown song request",
+    "bootup": {
+      "title": "System Booting",
+      "step": "Step {step} of {total}",
+      "stages": {
+        "unknown": "Unknown",
+        "loading_cache": "Loading cache…",
+        "loading_variables": "Loading variables…",
+        "loading_web_components": "Loading web components…",
+        "loading_integrations": "Loading integrations…",
+        "starting_ollama": "Starting Ollama…",
+        "loading_system_components": "Loading system components…",
+        "starting_twitch_bot": "Starting Twitch bot…",
+        "connecting_obs": "Connecting to OBS…",
+        "connecting_yolobox": "Connecting to YoloBox…",
+        "fetching_game_info": "Fetching game info…",
+        "starting_schedulers": "Starting schedulers…",
+        "initializing_macros": "Initializing macros…",
+        "sending_default_wled_colors": "Sending default WLED colors…",
+        "starting_audio": "Starting audio…",
+        "updating_system_information": "Updating system information…",
+        "reading_assets_folder": "Reading assets folder…",
+        "starting_watchers": "Starting watchers…",
+        "starting_gpio": "Starting GPIO…",
+        "starting_neopixel": "Starting NeoPixel…",
+        "starting_tts": "Starting TTS…",
+        "updating_obs_filters": "Updating OBS filters…",
+        "starting_auto_macros": "Starting auto macros…",
+        "loading_scene_rotations": "Loading scene rotations…",
+        "starting_music_player": "Starting music player…",
+        "updating_event_index": "Updating event index…",
+        "finished": "Finished",
+        "loading_web_content": "Loading web content…",
+        "loading_tts_voices": "Loading TTS voices…"
+      }
+    }
   },
   "sections": {
     "music": "Music",
